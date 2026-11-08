@@ -58,6 +58,7 @@ public class MainActivity extends Activity implements AppState.Listener {
     private String editingKind;
     private String lastKind;
     private TextView tgStatus;
+    private TextView tgStrategy;
     private Switch tgSwitch;
     private View testButton;
     private AlertDialog testDialog;
@@ -130,6 +131,8 @@ public class MainActivity extends Activity implements AppState.Listener {
             }
         });
         header.findViewById(R.id.tg_connect).setOnClickListener(v -> connectTelegram());
+        tgStrategy = header.findViewById(R.id.tg_strategy_pick);
+        tgStrategy.setOnClickListener(v -> pickTgStrategy());
         header.findViewById(R.id.tg_open_settings).setOnClickListener(
                 v -> startActivity(new Intent(this, TgProxySettingsActivity.class)));
 
@@ -252,7 +255,27 @@ public class MainActivity extends Activity implements AppState.Listener {
         updateTelegram();
     }
 
+    /** Конфиг прокси выбирается отдельно от основного обхода: с некоторыми конфигами YouTube работает, а Telegram нет. */
+    private void pickTgStrategy() {
+        java.util.List<String> names = TgProxySettings.strategyChoices(this);
+        String[] labels = new String[names.size()];
+        for (int i = 0; i < labels.length; i++) {
+            labels[i] = TgProxySettings.strategyLabel(this, names.get(i));
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.tg_section_strategy)
+                .setSingleChoiceItems(labels, Math.max(names.indexOf(TgProxySettings.strategy(this)), 0), (dialog, which) -> {
+                    TgProxySettings.setStrategy(this, names.get(which));
+                    dialog.dismiss();
+                    updateTelegram();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
     private void updateTelegram() {
+        tgStrategy.setText(getString(R.string.tg_strategy_pick,
+                TgProxySettings.strategyLabel(this, TgProxySettings.strategy(this))));
         AppState.Phase phase = AppState.tgPhase;
         TgWsProxy proxy = AppState.tgProxy;
         tgSwitch.setChecked(phase != AppState.Phase.OFF);

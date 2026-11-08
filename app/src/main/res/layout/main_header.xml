@@ -166,10 +166,19 @@
                 android:contentDescription="@string/tg_title" />
         </LinearLayout>
 
+        <TextView
+            android:id="@+id/tg_strategy_pick"
+            style="@style/TonalButton"
+            android:layout_width="match_parent"
+            android:layout_marginTop="12dp"
+            android:gravity="center_vertical|start"
+            android:drawableEnd="@android:drawable/arrow_down_float"
+            android:drawableTint="@color/muted" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="8dp"
             android:orientation="horizontal">
 
             <TextView

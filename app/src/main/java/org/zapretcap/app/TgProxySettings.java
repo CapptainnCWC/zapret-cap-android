@@ -52,6 +52,33 @@ final class TgProxySettings {
         return prefs(context).getString(STRATEGY, TgEngine.DIRECT);
     }
 
+    /** Сохраняет конфиг для прокси и сразу применяет его, если прокси работает. */
+    static void setStrategy(Context context, String name) {
+        if (strategy(context).equals(name)) {
+            return;
+        }
+        prefs(context).edit().putString(STRATEGY, name).apply();
+        if (prefs(context).getBoolean(ENABLED, false)) {
+            TelegramProxyService.restart(context);
+        }
+    }
+
+    /** Первый пункт - без обхода, дальше конфиги. */
+    static List<String> strategyChoices(Context context) {
+        List<String> names = new ArrayList<>();
+        names.add(TgEngine.DIRECT);
+        try {
+            names.addAll(Data.strategies(context));
+        } catch (java.io.IOException e) {
+            // останется только «без обхода»
+        }
+        return names;
+    }
+
+    static String strategyLabel(Context context, String name) {
+        return name.isEmpty() ? context.getString(R.string.tg_strategy_direct) : name;
+    }
+
     static List<String> dcLines(String text) {
         List<String> lines = new ArrayList<>();
         for (String line : text.split("\\r?\\n")) {

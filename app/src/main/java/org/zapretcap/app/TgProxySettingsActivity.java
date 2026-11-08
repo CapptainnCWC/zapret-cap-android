@@ -149,18 +149,12 @@ public class TgProxySettingsActivity extends Activity {
         return true;
     }
 
-    /** Первый пункт - без обхода, дальше конфиги. */
     private void setupStrategies() {
         strategies.clear();
-        strategies.add(TgEngine.DIRECT);
-        try {
-            strategies.addAll(Data.strategies(this));
-        } catch (java.io.IOException e) {
-            // останется только «без обхода»
-        }
+        strategies.addAll(TgProxySettings.strategyChoices(this));
         java.util.List<String> labels = new java.util.ArrayList<>();
         for (String name : strategies) {
-            labels.add(name.isEmpty() ? getString(R.string.tg_strategy_direct) : name);
+            labels.add(TgProxySettings.strategyLabel(this, name));
         }
         android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<>(
                 this, android.R.layout.simple_spinner_item, labels);

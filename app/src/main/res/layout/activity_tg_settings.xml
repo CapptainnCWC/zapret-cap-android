@@ -18,6 +18,13 @@
             android:textSize="20sp"
             android:textStyle="bold" />
 
+        <TextView style="@style/SettingsSection" android:text="@string/tg_section_strategy" />
+        <TextView style="@style/SettingsHint" android:text="@string/tg_strategy_hint" />
+        <Spinner
+            android:id="@+id/tg_strategy"
+            android:layout_width="match_parent"
+            android:layout_height="48dp" />
+
         <TextView style="@style/SettingsSection" android:text="@string/tg_section_connection" />
 
         <TextView style="@style/SettingsLabel" android:text="@string/tg_port" />
@@ -73,13 +80,6 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/tg_no_secure" />
-
-        <TextView style="@style/SettingsSection" android:text="@string/tg_section_strategy" />
-        <TextView style="@style/SettingsHint" android:text="@string/tg_strategy_hint" />
-        <Spinner
-            android:id="@+id/tg_strategy"
-            android:layout_width="match_parent"
-            android:layout_height="48dp" />
 
         <TextView style="@style/SettingsSection" android:text="@string/tg_section_performance" />
         <TextView style="@style/SettingsLabel" android:text="@string/tg_buf_kb" />
