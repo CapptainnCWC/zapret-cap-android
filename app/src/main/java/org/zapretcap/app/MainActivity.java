@@ -61,6 +61,8 @@ public class MainActivity extends Activity implements AppState.Listener {
     private TextView tgStrategy;
     private TextView updateButton;
     private boolean updateChecking;
+    /** Обновление, которое ждёт разрешения на установку: после возврата из настроек оно продолжится само. */
+    private UpdateChecker.Release pendingUpdate;
     private Switch tgSwitch;
     private View testButton;
     private AlertDialog testDialog;
@@ -149,6 +151,13 @@ public class MainActivity extends Activity implements AppState.Listener {
     protected void onStart() {
         super.onStart();
         AppState.setListener(this);
+        if (pendingUpdate != null) {
+            UpdateChecker.Release release = pendingUpdate;
+            pendingUpdate = null;
+            if (UpdateInstaller.canInstall(this)) {
+                installUpdate(release);
+            }
+        }
         if (UpdateChecker.due(this)) {
             checkUpdate(false);
         } else {
@@ -319,7 +328,8 @@ public class MainActivity extends Activity implements AppState.Listener {
         }
         new AlertDialog.Builder(this)
                 .setTitle(getString(R.string.update_available_title, release.version))
-                .setMessage(getString(R.string.update_available_message, installed, release.notes.trim()))
+                .setMessage(getString(R.string.update_available_message, installed,
+                        UpdateChecker.plainNotes(release.notes)))
                 .setPositiveButton(R.string.update_install, (d, w) -> installUpdate(release))
                 .setNeutralButton(R.string.update_open, (d, w) -> openUrl(release.pageUrl))
                 .setNegativeButton(android.R.string.cancel, null)
@@ -328,13 +338,22 @@ public class MainActivity extends Activity implements AppState.Listener {
 
     private void installUpdate(UpdateChecker.Release release) {
         if (!UpdateInstaller.canInstall(this)) {
-            Toast.makeText(this, R.string.update_need_permission, Toast.LENGTH_LONG).show();
-            try {
-                startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                        Uri.parse("package:" + getPackageName())));
-            } catch (ActivityNotFoundException e) {
-                openUrl(release.pageUrl);
-            }
+            // уведомление на многих прошивках обрезает длинный текст, поэтому объясняем в окне
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.update_permission_title)
+                    .setMessage(R.string.update_need_permission)
+                    .setPositiveButton(R.string.update_permission_open, (d, w) -> {
+                        pendingUpdate = release;
+                        try {
+                            startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                    Uri.parse("package:" + getPackageName())));
+                        } catch (ActivityNotFoundException e) {
+                            pendingUpdate = null;
+                            openUrl(release.pageUrl);
+                        }
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
             return;
         }
         android.widget.ProgressBar bar = new android.widget.ProgressBar(

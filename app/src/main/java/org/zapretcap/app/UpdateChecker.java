@@ -76,6 +76,29 @@ final class UpdateChecker {
         }
     }
 
+    /**
+     * Описание релиза написано в Markdown для GitHub. В окне приложения разметка видна бы как есть, а строки
+     * про ручную установку и SHA-256 там лишние: файл проверяет само приложение.
+     */
+    static String plainNotes(String markdown) {
+        StringBuilder out = new StringBuilder();
+        for (String raw : markdown.replace("\r", "").split("\n")) {
+            String line = raw.trim();
+            if (line.startsWith("SHA-256") || line.startsWith("**Установка")) {
+                continue;
+            }
+            line = line.replaceAll("\\*\\*|__|`", "")
+                    .replaceAll("\\[([^\\]]+)\\]\\([^)]*\\)", "$1")
+                    .replaceFirst("^#+\\s*", "")
+                    .replaceFirst("^[-*]\\s+", "• ");
+            if (line.isEmpty() && (out.length() == 0 || out.toString().endsWith("\n\n"))) {
+                continue;
+            }
+            out.append(line).append('\n');
+        }
+        return out.toString().trim();
+    }
+
     /** Версия с GitHub из прошлой проверки, если она новее установленной. */
     static String knownUpdate(Context context) {
         String latest = prefs(context).getString(KEY_LATEST, null);

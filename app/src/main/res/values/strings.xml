@@ -133,7 +133,9 @@
     <string name="update_install">Обновить</string>
     <string name="update_downloading">Скачиваю версию %1$s…</string>
     <string name="update_progress">%1$s из %2$s</string>
-    <string name="update_need_permission">Разрешите приложению устанавливать обновления: включите переключатель на следующем экране и снова нажмите «Обновить».</string>
+    <string name="update_permission_title">Разрешите установку обновлений</string>
+    <string name="update_need_permission">Android ставит приложения из файла только с разрешения. На следующем экране включите «Разрешить установку из этого источника» и вернитесь назад: обновление продолжится само.</string>
+    <string name="update_permission_open">Открыть настройки</string>
     <string name="update_download_failed">Не удалось скачать: %1$s</string>
     <string name="update_install_failed">Обновление не установилось: %1$s</string>
     <string name="update_latest">Установлена последняя версия %1$s</string>
