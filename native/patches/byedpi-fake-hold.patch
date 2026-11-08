@@ -1,0 +1,53 @@
+--- a/native/third_party/byedpi/params.h
++++ b/native/third_party/byedpi/params.h
+@@ -84,6 +84,9 @@
+     bool md5sig;
+     struct packet fake_data;
+     int udp_fake_count;
++    // сколько ждать, прежде чем подменить фейк настоящими данными. За это время ядро повторяет фейк само,
++    // как --dpi-desync-repeats в zapret: один фейк DPI пропускает, повторённый замечает
++    int fake_hold;
+     struct part fake_offset;
+     int fake_sni_count;
+     const char **fake_sni_list;
+--- a/native/third_party/byedpi/main.c
++++ b/native/third_party/byedpi/main.c
+@@ -191,6 +191,7 @@
+     {"ipset",         1, 0, 'j'},
+     {"connect-to",    1, 0, 'C'}, //
+     {"dns-port",      1, 0, 'J'}, //
++    {"fake-hold",     1, 0, 'k'}, //
+     {0}
+ };
+     
+@@ -1174,6 +1175,14 @@
+             params.await_int = atoi(optarg);
+             break;
+             
++        case 'k':
++            val = strtol(optarg, &end, 0);
++            if (val < 0 || val > 5000 || *end)
++                invalid = 1;
++            else
++                dp->fake_hold = val;
++            break;
++
+         case 'J':
+             val = strtol(optarg, &end, 0);
+             if (val <= 0 || val > 0xffff || *end)
+--- a/native/third_party/byedpi/desync.c
++++ b/native/third_party/byedpi/desync.c
+@@ -651,6 +651,13 @@
+             return lp + s - offset;
+         }
+         
++        if (part.m == DESYNC_FAKE && dp.fake_hold > 0 && curr_part > part_skip) {
++            // фейк остаётся на месте настоящих данных: пока он не подтверждён, ядро шлёт его повторно
++            LOG(LOG_S, "fake hold: %d ms\n", dp.fake_hold);
++            set_timer(pool, val, dp.fake_hold);
++            *wait = true;
++            return pos - offset;
++        }
+         if (sock_has_notsent(sfd) 
+                 || (params.wait_send 
+                     && curr_part > part_skip)) {

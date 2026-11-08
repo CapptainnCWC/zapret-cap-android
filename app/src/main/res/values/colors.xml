@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="icon_background">#0E8A5F</color>
+    <bool name="light_bars">true</bool>
+    <color name="bg">#F3F6F4</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_alt">#E8EEEA</color>
+    <color name="on_surface">#17201C</color>
+    <color name="muted">#5B6861</color>
+    <color name="outline">#DDE4E0</color>
+    <color name="accent">#0E8A5F</color>
+    <color name="accent_soft">#D8F2E6</color>
+    <color name="on_accent">#FFFFFF</color>
+    <color name="danger">#C62828</color>
+    <color name="danger_soft">#FBE6E4</color>
+</resources>

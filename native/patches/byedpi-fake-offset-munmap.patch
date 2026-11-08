@@ -1,0 +1,40 @@
+--- a/conev.h
++++ b/conev.h
+@@ -90,6 +90,7 @@
+     bool restore_ttl;
+     bool restore_md5;
+     char *restore_fake;
++    char *restore_fake_base;
+     size_t restore_fake_len;
+     const char *restore_orig;
+     size_t restore_orig_len;
+--- a/desync.c
++++ b/desync.c
+@@ -210,6 +210,7 @@
+     while (1) {
+         char *p = pkt.data + pkt.off;
+         val->restore_fake = p;
++        val->restore_fake_base = pkt.data;
+         val->restore_fake_len = pkt.size;
+         
+         if (setttl(val->fd, opt->ttl ? opt->ttl : DEFAULT_TTL) < 0) {
+@@ -380,7 +381,7 @@
+     if (val->restore_fake) {
+         memcpy(val->restore_fake, 
+             val->restore_orig, val->restore_orig_len);
+-        munmap(val->restore_fake, val->restore_fake_len);
++        munmap(val->restore_fake_base, val->restore_fake_len);
+         val->restore_fake = 0;
+     }
+     if (val->restore_md5) {
+--- a/conev.c
++++ b/conev.c
+@@ -102,7 +102,7 @@
+     }
+     #ifndef _WIN32
+     if (val->restore_fake) {
+-        munmap(val->restore_fake, val->restore_fake_len);
++        munmap(val->restore_fake_base, val->restore_fake_len);
+         val->restore_fake = 0;
+     }
+     #endif

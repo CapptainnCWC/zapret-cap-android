@@ -1,0 +1,16 @@
+# general (ALT4)
+# Сгенерировано tools/bat2vpn.py. Каждая строка - группа ciadpi.
+
+-j %LISTS%/vpn-ipset-exclude.txt
+-K u -V 443 -a 6 -t 64 -l %FAKE%/quic_initial_www_google_com.bin
+-K u -V 19294-19344 -a 6 -t 64 -l %FAKE%/ACTIVE_DISCORD_UDP.bin
+-K u -V 50000-50100 -a 6 -t 64 -l %FAKE%/ACTIVE_DISCORD_UDP.bin
+-K t -H :discord.media -s 2 -f -1 -O 2 -l %FAKE%/tls_clienthello_www_google_com.bin -t 8 --fake-hold 350
+-K h -H :discord.media -s 2 -f -1 -O 2 -t 8 --fake-hold 350
+-K t -H %LISTS%/vpn-list-google.txt -s 2 -f -1 -O 2 -l %FAKE%/tls_clienthello_www_google_com.bin -t 8 --fake-hold 350
+-K h -H %LISTS%/vpn-list-google.txt -s 2 -f -1 -O 2 -t 8 --fake-hold 350
+-K t,h -H %LISTS%/vpn-list-exclude.txt
+-K t -H %LISTS%/vpn-list-general.txt -s 2 -f -1 -O 2 -l %FAKE%/tls_clienthello_www_google_com.bin -t 8 --fake-hold 350
+-K h -H %LISTS%/vpn-list-general.txt -s 2 -f -1 -O 2 -l %FAKE%/tls_clienthello_www_sferum_ru.bin -t 8 --fake-hold 350
+-K t -j %IPSET% -s 2 -f -1 -O 2 -l %FAKE%/tls_clienthello_www_google_com.bin -t 8 --fake-hold 350
+-K h -j %IPSET% -s 2 -f -1 -O 2 -l %FAKE%/tls_clienthello_www_sferum_ru.bin -t 8 --fake-hold 350

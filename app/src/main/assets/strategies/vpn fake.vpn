@@ -1,0 +1,8 @@
+# vpn fake
+# Сгенерировано tools/bat2vpn.py. Каждая строка - группа ciadpi. Своя идея ByeDPI, в Windows-версии аналога нет.
+
+-j %LISTS%/vpn-ipset-exclude.txt
+-K u -V 443 -a 6 -t 64 -l %FAKE%/quic_initial_www_google_com.bin
+-K t,h -H %LISTS%/vpn-list-exclude.txt
+-K t,h -H %LISTS%/vpn-list-general.txt -f -1 -t 8 --fake-hold 350
+-K t,h -H %LISTS%/vpn-list-google.txt -f -1 -t 8 --fake-hold 350

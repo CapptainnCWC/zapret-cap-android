@@ -1,0 +1,86 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Ключ подписи хранится вне репозитория. Без keystore.properties сборка подписывается отладочным ключом
+def keystoreFile = rootProject.file('keystore.properties')
+def keystore = new Properties()
+if (keystoreFile.exists()) {
+    keystoreFile.withInputStream { keystore.load(it) }
+}
+
+def nativeOut = layout.buildDirectory.dir('native-libs')
+
+android {
+    namespace 'org.zapretcap.app'
+    compileSdk 35
+    ndkVersion '28.2.13676358'
+
+    defaultConfig {
+        applicationId 'org.zapretcap.app'
+        minSdk 24
+        targetSdk 35
+        versionCode 5
+        versionName '1.4.0'
+    }
+
+    signingConfigs {
+        release {
+            if (keystoreFile.exists()) {
+                storeFile file(keystore['storeFile'])
+                storePassword keystore['storePassword']
+                keyAlias keystore['keyAlias']
+                keyPassword keystore['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig keystoreFile.exists() ? signingConfigs.release : signingConfigs.debug
+        }
+        debug {
+            // тем же ключом: отладочная сборка ставится поверх рабочей и сохраняет настройки и разрешение на VPN
+            signingConfig keystoreFile.exists() ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        jniLibs {
+            // движки запускаются как программы: им нужны настоящие файлы, а не страницы внутри APK
+            useLegacyPackaging true
+        }
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs = [nativeOut.get().asFile]
+        }
+    }
+}
+
+dependencies {
+    // HTTP/2 для медиа Telegram: HPACK, ALPN на старых Android и управление потоком уже отлажены
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+}
+
+tasks.register('buildNative', Exec) {
+    def script = rootProject.file('native/build-native.sh')
+    inputs.file(script)
+    inputs.dir(rootProject.file('native/third_party'))
+    outputs.dir(nativeOut)
+    doFirst {
+        commandLine 'bash', script, androidComponents.sdkComponents.ndkDirectory.get().asFile, nativeOut.get().asFile
+    }
+}
+
+tasks.named('preBuild') {
+    dependsOn 'buildNative'
+}

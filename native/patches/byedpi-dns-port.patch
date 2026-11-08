@@ -1,0 +1,75 @@
+--- a/native/third_party/byedpi/proxy.c
++++ b/native/third_party/byedpi/proxy.c
+@@ -779,6 +779,16 @@
+                 return -1;
+             }
+             if (!pair->addr.in.sin_port) {
++                // Запросы DNS идут в локальный сервер приложения. Клиент должен видеть ответ
++                // от того адреса, который спрашивал, поэтому исходный адрес запоминается.
++                if (params.dns_port && addr.in.sin_port == htons(53)) {
++                    pair->dns_orig = addr;
++                    pair->dns_redirected = 1;
++                    memset(&addr, 0, sizeof(addr));
++                    addr.in.sin_family = AF_INET;
++                    addr.in.sin_port = htons(params.dns_port);
++                    addr.in.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
++                }
+                 if (params.baddr.sa.sa_family == AF_INET6) {
+                     map_fix(&addr, 6);
+                 }
+@@ -798,6 +808,9 @@
+             ns = udp_hook(pair, data + offs, n - offs, &pair->addr);
+         }
+         else {
++            if (val->dns_redirected) {
++                addr = val->dns_orig;
++            }
+             map_fix(&addr, 0);
+             memset(buff->data, 0, S_SIZE_I6);
+             
+--- a/native/third_party/byedpi/main.c
++++ b/native/third_party/byedpi/main.c
+@@ -190,6 +190,7 @@
+     #endif
+     {"ipset",         1, 0, 'j'},
+     {"connect-to",    1, 0, 'C'}, //
++    {"dns-port",      1, 0, 'J'}, //
+     {0}
+ };
+     
+@@ -1173,6 +1174,14 @@
+             params.await_int = atoi(optarg);
+             break;
+             
++        case 'J':
++            val = strtol(optarg, &end, 0);
++            if (val <= 0 || val > 0xffff || *end)
++                invalid = 1;
++            else
++                params.dns_port = val;
++            break;
++
+         case 'C':
+             if (get_addr(optarg, &dp->custom_dst_addr) < 0)
+                 invalid = 1;
+--- a/native/third_party/byedpi/params.h
++++ b/native/third_party/byedpi/params.h
+@@ -146,6 +146,7 @@
+     size_t bfsize;
+     union sockaddr_u baddr;
+     union sockaddr_u laddr;
++    uint16_t dns_port;
+     struct mphdr *mempool;
+     
+     const char *protect_path;
+--- a/native/third_party/byedpi/conev.h
++++ b/native/third_party/byedpi/conev.h
+@@ -75,6 +75,8 @@
+     struct buffer *buff, *sq_buff;
+     int flag;
+     union sockaddr_u addr;
++    union sockaddr_u dns_orig;
++    bool dns_redirected;
+     char *host;
+     int host_len;
+     

@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.bin binary
+*.jar binary
+tools/bat/*.bat text eol=crlf

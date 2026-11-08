@@ -1,0 +1,38 @@
+--- a/native/third_party/byedpi/extend.c
++++ b/native/third_party/byedpi/extend.c
+@@ -211,8 +211,16 @@
+     const char *data = (const char *)&dst->in.sin_addr;
+     
+     if (dst->sa.sa_family == AF_INET6) {
+-        len = sizeof(dst->in6.sin6_addr);
+-        data = (const char *)&dst->in6.sin6_addr;
++        static const char mapped[12] = "\0\0\0\0\0\0\0\0\0\0\xff\xff";
++        // адрес IPv4, записанный как IPv6 (::ffff:a.b.c.d): так движок хранит адреса UDP. Сравнивать
++        // его нужно как IPv4, иначе нулевые старшие биты совпали бы с 0.0.0.0/8 из списка исключений
++        if (!memcmp(&dst->in6.sin6_addr, mapped, sizeof(mapped))) {
++            data = (const char *)&dst->in6.sin6_addr + sizeof(mapped);
++        }
++        else {
++            len = sizeof(dst->in6.sin6_addr);
++            data = (const char *)&dst->in6.sin6_addr;
++        }
+     }
+     if (mem_get(ipset, data, len * 8)) {
+         return 1;
+@@ -254,9 +262,13 @@
+             return 0;
+         }
+     }
+-    if (dp->pf[0] && 
+-            (dst->in.sin_port < dp->pf[0] || dst->in.sin_port > dp->pf[1])) {
+-        return 0;
++    // порты хранятся в сетевом порядке байтов: сравнивать диапазон можно только после ntohs,
++    // иначе 50000-50100 совпадал бы с половиной всех портов
++    if (dp->pf[0]) {
++        uint16_t port = ntohs(dst->in.sin_port);
++        if (port < ntohs(dp->pf[0]) || port > ntohs(dp->pf[1])) {
++            return 0;
++        }
+     }
+     if (dp->ipset && !check_ip(dp->ipset, dst)) {
+         return 0;

@@ -1,0 +1,12 @@
+# general (ALT9)
+# Сгенерировано tools/bat2vpn.py. Каждая строка - группа ciadpi.
+
+-j %LISTS%/vpn-ipset-exclude.txt
+-K u -V 443 -a 6 -t 64 -l %FAKE%/quic_initial_www_google_com.bin
+-K u -V 19294-19344 -a 6 -t 64 -l %FAKE%/ACTIVE_DISCORD_UDP.bin
+-K u -V 50000-50100 -a 6 -t 64 -l %FAKE%/ACTIVE_DISCORD_UDP.bin
+-K t,h -H :discord.media -s 0+h -f 0+he -O 0+h -Q orig -n www.google.com -t 8 --fake-hold 350
+-K t,h -H %LISTS%/vpn-list-google.txt -s 0+h -f 0+he -O 0+h -Q orig -n www.google.com -t 8 --fake-hold 350
+-K t,h -H %LISTS%/vpn-list-exclude.txt
+-K t,h -H %LISTS%/vpn-list-general.txt -s 0+h -f 0+he -O 0+h -Q orig -n ozon.ru -t 8 --fake-hold 350
+-K t,h -j %IPSET% -s 0+h -f 0+he -O 0+h -Q orig -n ozon.ru -t 8 --fake-hold 350

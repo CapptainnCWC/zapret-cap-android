@@ -1,0 +1,14 @@
+# сборка
+.gradle/
+build/
+app/build/
+native/build/
+native/third_party/hev-socks5-tunnel/obj/
+dist/
+
+# у каждого свои
+local.properties
+keystore.properties
+*.jks
+.idea/
+__pycache__/
