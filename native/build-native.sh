@@ -25,28 +25,44 @@ JOBS="$(nproc)"
 # страницы 16 КБ: без этого приложение не запустится на новых устройствах с такими страницами
 PAGE_FLAGS="-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384"
 OPT_FLAGS="-Os -ffunction-sections -fdata-sections -fPIE"
+# пути к исходникам попадают в сообщения assert; без замены в APK был бы путь к папке на компьютере сборщика.
+# Отдельной переменной в кавычках: в пути может быть пробел
+PREFIX_MAP="-ffile-prefix-map=$TP/=third_party/"
 LD_FLAGS="-pie -Wl,--gc-sections -s $PAGE_FLAGS"
 
 build_ciadpi()
 {
 	local src="$TP/byedpi"
 	# shellcheck disable=SC2086
-	$CC $OPT_FLAGS $CPU -std=gnu99 -D_GNU_SOURCE -D_DEFAULT_SOURCE -I"$src" -Wno-everything \
+	$CC $OPT_FLAGS "$PREFIX_MAP" $CPU -std=gnu99 -D_GNU_SOURCE -D_DEFAULT_SOURCE -I"$src" -Wno-everything \
 		"$src"/packets.c "$src"/main.c "$src"/conev.c "$src"/proxy.c "$src"/desync.c "$src"/mpool.c "$src"/extend.c \
 		$LD_FLAGS -o "$OUT/$ABI/libciadpi.so"
 }
 
+# ndk-build не работает, если в пути к проекту есть пробел (например, диск «ssd 500»).
+# Тогда исходники hev копируются во временную папку без пробелов и собираются там.
+HEV_SRC="$TP/hev-socks5-tunnel"
+HEV_TMP=""
+if [[ "$HERE" == *" "* ]]; then
+	HEV_TMP="$(mktemp -d "${TMPDIR:-/tmp}/zapret-cap-ndk.XXXXXX")"
+	trap 'rm -rf "$HEV_TMP"' EXIT
+	cp -a "$HEV_SRC" "$HEV_TMP/"
+	HEV_SRC="$HEV_TMP/hev-socks5-tunnel"
+fi
+
 build_hev()
 {
+	local work="$WORK/hev"
+	[ -z "$HEV_TMP" ] || work="$HEV_TMP/out/$ABI"
 	# имя класса Java, в котором библиотека регистрирует свои функции
-	"$NDK/ndk-build" -s -j"$JOBS" -C "$TP/hev-socks5-tunnel" \
-		NDK_PROJECT_PATH="$TP/hev-socks5-tunnel" \
-		APP_BUILD_SCRIPT="$TP/hev-socks5-tunnel/Android.mk" \
-		NDK_APPLICATION_MK="$TP/hev-socks5-tunnel/Application.mk" \
-		NDK_OUT="$WORK/hev/obj" NDK_LIBS_OUT="$WORK/hev/libs" \
+	"$NDK/ndk-build" -s -j"$JOBS" -C "$HEV_SRC" \
+		NDK_PROJECT_PATH="$HEV_SRC" \
+		APP_BUILD_SCRIPT="$HEV_SRC/Android.mk" \
+		NDK_APPLICATION_MK="$HEV_SRC/Application.mk" \
+		NDK_OUT="$work/obj" NDK_LIBS_OUT="$work/libs" \
 		APP_ABI="$ABI" APP_PLATFORM="android-$API" APP_MODULES=hev-socks5-tunnel \
-		APP_CFLAGS="-O3 -DPKGNAME=org/zapretcap/app -DCLSNAME=TunBridge"
-	cp "$WORK/hev/libs/$ABI/libhev-socks5-tunnel.so" "$OUT/$ABI/"
+		APP_CFLAGS="-O3 -DPKGNAME=org/zapretcap/app -DCLSNAME=TunBridge -ffile-prefix-map=$HEV_SRC/=third_party/hev-socks5-tunnel/"
+	cp "$work/libs/$ABI/libhev-socks5-tunnel.so" "$OUT/$ABI/"
 }
 
 for ABI in "${ABIS[@]}"; do
