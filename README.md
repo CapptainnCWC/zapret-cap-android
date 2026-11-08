@@ -6,7 +6,7 @@
 
 <img src="docs/screenshot.png" width="280" alt="Экран приложения">
 
-Это перенос [Zapret Cap для Linux](https://github.com/CapptainnCWC/zapret-cap) на Android. Основа проекта: стратегии [zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube) и движок [ByeDPI](https://github.com/hufrea/byedpi). Конфиги называются так же, как стратегии в Windows-версии. Права root не нужны.
+Это перенос [Zapret Cap для Linux](https://github.com/CapptainnCWC/zapret-cap) на Android. Основа проекта: стратегии [zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube), [zapret2](https://github.com/bol-van/zapret2) от bol-van и прокси для Telegram [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy). Конфиги называются так же, как стратегии в Windows-версии. Права root не нужны.
 
 ## Установка
 
@@ -187,4 +187,4 @@ keyPassword=...
 
 ## Лицензии
 
-Код приложения распространяется по лицензии MIT, см. [LICENSE.txt](LICENSE.txt). В APK входят сторонние компоненты с собственными лицензиями, в том числе под GPL: [THIRD_PARTY.md](THIRD_PARTY.md).
+Код приложения распространяется по лицензии MIT, см. [LICENSE.txt](LICENSE.txt). В APK входят сторонние компоненты с собственными лицензиями: [THIRD_PARTY.md](THIRD_PARTY.md).
