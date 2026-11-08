@@ -274,7 +274,7 @@ final class BypassSettings {
      * Сначала напрямую: приложение исключено из VPN. GitHub бывает недоступен без обхода, тогда через движок,
      * если обход сейчас включён.
      */
-    private static String download(String url) throws IOException {
+    static String download(String url) throws IOException {
         IOException direct;
         try {
             return fetch(url, Proxy.NO_PROXY);

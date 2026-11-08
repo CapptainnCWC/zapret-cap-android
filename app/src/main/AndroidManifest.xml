@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- только для обновления самого приложения из релиза на GitHub, установку подтверждает человек -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:allowBackup="false"
@@ -48,6 +50,10 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="local mtproto proxy" />
         </service>
+
+        <receiver
+            android:name=".UpdateInstaller$StatusReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".BootReceiver"

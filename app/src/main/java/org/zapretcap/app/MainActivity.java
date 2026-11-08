@@ -59,6 +59,8 @@ public class MainActivity extends Activity implements AppState.Listener {
     private String lastKind;
     private TextView tgStatus;
     private TextView tgStrategy;
+    private TextView updateButton;
+    private boolean updateChecking;
     private Switch tgSwitch;
     private View testButton;
     private AlertDialog testDialog;
@@ -95,6 +97,9 @@ public class MainActivity extends Activity implements AppState.Listener {
         toggle = header.findViewById(R.id.toggle);
         footer.findViewById(R.id.open_bypass_settings).setOnClickListener(
                 v -> startActivity(new Intent(this, BypassSettingsActivity.class)));
+        updateButton = footer.findViewById(R.id.check_update);
+        updateButton.setOnClickListener(v -> checkUpdate(true));
+        showUpdateState();
         tabWifi = header.findViewById(R.id.tab_wifi);
         tabCell = header.findViewById(R.id.tab_cell);
         tabWifi.setOnClickListener(v -> showKind(NetKind.WIFI));
@@ -144,6 +149,11 @@ public class MainActivity extends Activity implements AppState.Listener {
     protected void onStart() {
         super.onStart();
         AppState.setListener(this);
+        if (UpdateChecker.due(this)) {
+            checkUpdate(false);
+        } else {
+            showUpdateState();
+        }
         // за время, пока экрана не было, телефон мог сменить сеть
         String kind = NetKind.current(this);
         if (!kind.equals(lastKind)) {
@@ -253,6 +263,129 @@ public class MainActivity extends Activity implements AppState.Listener {
         error.setText(message);
         error.setVisibility(message == null || message.isEmpty() ? View.GONE : View.VISIBLE);
         updateTelegram();
+    }
+
+    private void showUpdateState() {
+        if (updateChecking) {
+            updateButton.setText(R.string.update_checking);
+            return;
+        }
+        String update = UpdateChecker.knownUpdate(this);
+        updateButton.setText(update != null
+                ? getString(R.string.update_available_button, update)
+                : getString(R.string.update_check, UpdateChecker.installedVersion(this)));
+        updateButton.setTextColor(getColor(update != null ? R.color.accent : R.color.on_surface));
+    }
+
+    /** По кнопке показываем результат; сама проверка раз в сутки только меняет надпись на кнопке. */
+    private void checkUpdate(boolean manual) {
+        if (updateChecking) {
+            return;
+        }
+        updateChecking = true;
+        showUpdateState();
+        new Thread(() -> {
+            UpdateChecker.Release release = null;
+            String failure = null;
+            try {
+                release = UpdateChecker.fetch(this);
+            } catch (IOException e) {
+                failure = String.valueOf(e.getMessage());
+            }
+            UpdateChecker.Release result = release;
+            String error = failure;
+            runOnUiThread(() -> {
+                updateChecking = false;
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+                showUpdateState();
+                if (manual) {
+                    showUpdateResult(result, error);
+                }
+            });
+        }, "update-check").start();
+    }
+
+    private void showUpdateResult(UpdateChecker.Release release, String error) {
+        String installed = UpdateChecker.installedVersion(this);
+        if (release == null) {
+            Toast.makeText(this, getString(R.string.update_failed, error), Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (!UpdateChecker.isNewer(release.version, installed)) {
+            Toast.makeText(this, getString(R.string.update_latest, installed), Toast.LENGTH_SHORT).show();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(getString(R.string.update_available_title, release.version))
+                .setMessage(getString(R.string.update_available_message, installed, release.notes.trim()))
+                .setPositiveButton(R.string.update_install, (d, w) -> installUpdate(release))
+                .setNeutralButton(R.string.update_open, (d, w) -> openUrl(release.pageUrl))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void installUpdate(UpdateChecker.Release release) {
+        if (!UpdateInstaller.canInstall(this)) {
+            Toast.makeText(this, R.string.update_need_permission, Toast.LENGTH_LONG).show();
+            try {
+                startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + getPackageName())));
+            } catch (ActivityNotFoundException e) {
+                openUrl(release.pageUrl);
+            }
+            return;
+        }
+        android.widget.ProgressBar bar = new android.widget.ProgressBar(
+                this, null, android.R.attr.progressBarStyleHorizontal);
+        bar.setIndeterminate(true);
+        int pad = (int) (24 * getResources().getDisplayMetrics().density);
+        bar.setPadding(pad, pad / 2, pad, 0);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(getString(R.string.update_downloading, release.version))
+                // строка сообщения нужна сразу: появиться позже она не сможет
+                .setMessage("")
+                .setView(bar)
+                .setCancelable(false)
+                .show();
+        new Thread(() -> {
+            String failure = null;
+            java.io.File apk = null;
+            try {
+                apk = UpdateInstaller.download(this, release.apkUrl, (done, total) -> runOnUiThread(() -> {
+                    if (total > 0) {
+                        bar.setIndeterminate(false);
+                        bar.setMax((int) (total / 1024));
+                        bar.setProgress((int) (done / 1024));
+                        dialog.setMessage(getString(R.string.update_progress,
+                                Stats.humanBytes(done), Stats.humanBytes(total)));
+                    }
+                }));
+                UpdateInstaller.install(this, apk);
+            } catch (IOException | RuntimeException e) {
+                failure = String.valueOf(e.getMessage());
+            }
+            String error = failure;
+            runOnUiThread(() -> {
+                if (!isDestroyed()) {
+                    dialog.dismiss();
+                }
+                if (error != null) {
+                    Toast.makeText(this, getString(R.string.update_download_failed, error), Toast.LENGTH_LONG).show();
+                }
+            });
+        }, "update-download").start();
+    }
+
+    private void openUrl(String url) {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (ActivityNotFoundException e) {
+            ClipboardManager clipboard = getSystemService(ClipboardManager.class);
+            clipboard.setPrimaryClip(ClipData.newPlainText(url, url));
+            Toast.makeText(this, url, Toast.LENGTH_LONG).show();
+        }
     }
 
     /** Конфиг прокси выбирается отдельно от основного обхода: с некоторыми конфигами YouTube работает, а Telegram нет. */

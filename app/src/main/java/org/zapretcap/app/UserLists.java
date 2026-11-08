@@ -52,11 +52,112 @@ final class UserLists {
         return file(context, kind).exists();
     }
 
+    /**
+     * Домены, которые появились во встроенных списках в версии 1.4.2. Нужны один раз: у тех, кто менял список
+     * до неё, ещё нет файла с прежним встроенным списком.
+     */
+    private static final List<String> ADDED_1_4_2 = java.util.Arrays.asList(
+            "whatsapp.com", "whatsapp.net", "wa.me", "whatsapp.biz", "whatsapp.info", "whatsapp.org", "whatsapp.tv",
+            "whatsappbrand.com", "instagram.com", "cdninstagram.com", "instagr.am", "ig.me", "igcdn.com",
+            "igsonar.com", "igtv.com", "facebook.com", "facebook.net", "fbcdn.net", "fbsbx.com", "fb.com", "fb.me");
+
+    private static File builtinFile(Context context, Kind kind) {
+        return new File(new File(context.getFilesDir(), "user-lists"), kind.id + ".builtin");
+    }
+
+    private static List<String> builtin(Context context, Kind kind) throws IOException {
+        try (InputStream in = context.getAssets().open("lists/" + kind.vpnFile())) {
+            return readLines(in);
+        }
+    }
+
     static synchronized List<String> load(Context context, Kind kind) throws IOException {
         File custom = file(context, kind);
-        try (InputStream in = custom.exists() ? new FileInputStream(custom)
-                : context.getAssets().open("lists/" + kind.vpnFile())) {
+        if (!custom.exists()) {
+            return builtin(context, kind);
+        }
+        syncBuiltin(context);
+        try (InputStream in = new FileInputStream(custom)) {
             return readLines(in);
+        }
+    }
+
+    private static List<String> readCustom(Context context, Kind kind) throws IOException {
+        File custom = file(context, kind);
+        if (!custom.exists()) {
+            return builtin(context, kind);
+        }
+        try (InputStream in = new FileInputStream(custom)) {
+            return readLines(in);
+        }
+    }
+
+    /**
+     * Изменённый список заменяет встроенный целиком, и домены, добавленные в приложение позже, до человека не дошли бы.
+     * Поэтому новые встроенные домены дописываются и в изменённые списки, если человек не перенёс их в другой список.
+     * Удалённые человеком домены не возвращаются: сравнение идёт с встроенным списком прошлой версии.
+     */
+    private static void syncBuiltin(Context context) throws IOException {
+        java.util.Map<Kind, List<String>> fresh = new java.util.EnumMap<>(Kind.class);
+        for (Kind kind : Kind.values()) {
+            File marker = builtinFile(context, kind);
+            List<String> current = builtin(context, kind);
+            List<String> previous;
+            if (marker.exists()) {
+                try (InputStream in = new FileInputStream(marker)) {
+                    previous = readLines(in);
+                }
+            } else {
+                previous = new ArrayList<>(current);
+                previous.removeAll(ADDED_1_4_2);
+            }
+            if (!marker.exists() || !current.equals(previous)) {
+                writeLines(marker, current);
+            }
+            List<String> added = new ArrayList<>(current);
+            added.removeAll(previous);
+            if (!added.isEmpty() && file(context, kind).exists()) {
+                fresh.put(kind, added);
+            }
+        }
+        for (java.util.Map.Entry<Kind, List<String>> entry : fresh.entrySet()) {
+            Kind kind = entry.getKey();
+            List<String> added = entry.getValue();
+            // в другом списке домен оказался по воле человека: там его и оставляем
+            for (Kind other : Kind.values()) {
+                if (other != kind && file(context, other).exists()) {
+                    added.removeAll(readCustom(context, other));
+                }
+            }
+            if (!added.isEmpty()) {
+                Set<String> merged = new LinkedHashSet<>(readCustom(context, kind));
+                merged.addAll(added);
+                save(context, kind, new ArrayList<>(merged));
+            }
+        }
+    }
+
+    /** Прежде чем список станет изменённым, запоминаем встроенный: иначе следующая сверка сочла бы домены новыми. */
+    private static void rememberBuiltin(Context context) throws IOException {
+        for (Kind kind : Kind.values()) {
+            File marker = builtinFile(context, kind);
+            if (!marker.exists()) {
+                writeLines(marker, builtin(context, kind));
+            }
+        }
+    }
+
+    private static void writeLines(File target, List<String> lines) throws IOException {
+        File dir = target.getParentFile();
+        if (!dir.isDirectory() && !dir.mkdirs()) {
+            throw new IOException("mkdir " + dir);
+        }
+        File temp = new File(dir, target.getName() + ".tmp");
+        try (OutputStream out = new FileOutputStream(temp)) {
+            out.write((String.join("\n", lines) + "\n").getBytes(StandardCharsets.UTF_8));
+        }
+        if (!temp.renameTo(target)) {
+            throw new IOException("rename " + target);
         }
     }
 
@@ -74,6 +175,7 @@ final class UserLists {
     }
 
     static synchronized void save(Context context, Kind kind, List<String> domains) throws IOException {
+        rememberBuiltin(context);
         File target = file(context, kind);
         File dir = target.getParentFile();
         if (!dir.isDirectory() && !dir.mkdirs()) {
@@ -178,9 +280,7 @@ final class UserLists {
     /** Домены, которые человек добавил к встроенному списку. */
     static List<String> added(Context context, Kind kind) throws IOException {
         List<String> list = load(context, kind);
-        try (InputStream in = context.getAssets().open("lists/" + kind.vpnFile())) {
-            list.removeAll(readLines(in));
-        }
+        list.removeAll(builtin(context, kind));
         return list;
     }
 

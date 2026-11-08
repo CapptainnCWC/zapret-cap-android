@@ -124,4 +124,18 @@
     <string name="tg_strategy_hint">Прокси не зависит от основного обхода. «Без обхода» работает как tg-ws-proxy на компьютере. Если Telegram не подключается, выберите конфиг: для прокси запустится отдельный движок с ним.</string>
     <string name="tg_strategy_direct">Без обхода</string>
     <string name="tg_strategy_pick">Обход для прокси: %1$s</string>
+    <string name="update_check">Проверить обновления · версия %1$s</string>
+    <string name="update_checking">Проверяю обновления…</string>
+    <string name="update_available_button">Доступна версия %1$s · обновить</string>
+    <string name="update_available_title">Доступна версия %1$s</string>
+    <string name="update_available_message">Сейчас установлена %1$s. Приложение скачает новую версию с GitHub, и Android предложит установить её поверх: настройки сохранятся.\n\n%2$s</string>
+    <string name="update_open">Страница релиза</string>
+    <string name="update_install">Обновить</string>
+    <string name="update_downloading">Скачиваю версию %1$s…</string>
+    <string name="update_progress">%1$s из %2$s</string>
+    <string name="update_need_permission">Разрешите приложению устанавливать обновления: включите переключатель на следующем экране и снова нажмите «Обновить».</string>
+    <string name="update_download_failed">Не удалось скачать: %1$s</string>
+    <string name="update_install_failed">Обновление не установилось: %1$s</string>
+    <string name="update_latest">Установлена последняя версия %1$s</string>
+    <string name="update_failed">Не удалось проверить: %1$s</string>
 </resources>
