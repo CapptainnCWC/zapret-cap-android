@@ -46,6 +46,9 @@ final class ConfigTester {
             "www.google.com", "www.google.ru", "www.gstatic.com", "fonts.googleapis.com",
             "ya.ru", "yandex.ru", "duckduckgo.com", "www.bing.com",
             "www.cloudflare.com", "cdnjs.cloudflare.com",
+            // Ответ больше 24 КБ: на части сетей обманка у адреса Cloudflare замораживает соединение после
+            // первых ~23 КБ, а мелкие страницы при этом открываются. Такой конфиг ломает загрузки с сайтов на Cloudflare
+            "speed.cloudflare.com/__down?bytes=100000",
     };
     /** Сколько добавленных человеком доменов проверять: длинный список сделал бы подбор слишком долгим. */
     private static final int MAX_USER_TARGETS = 6;
@@ -381,7 +384,12 @@ final class ConfigTester {
     }
 
     /** Открывается ли сайт: TLS с проверкой сертификата, ответ HTTP и данные, которые не застывают на середине. */
-    private static boolean opens(String host, InetAddress address, int socksPort) {
+    private static boolean opens(String target, InetAddress address, int socksPort) {
+        String host = hostOf(target);
+        String path = target.substring(host.length());
+        if (path.isEmpty()) {
+            path = "/";
+        }
         Socket plain = null;
         Socket tls = null;
         try {
@@ -390,7 +398,7 @@ final class ConfigTester {
             tls = secure;
             secure.setSoTimeout(READ_TIMEOUT_MS);
             OutputStream out = secure.getOutputStream();
-            out.write(("GET / HTTP/1.1\r\nHost: " + host + "\r\nUser-Agent: Mozilla/5.0 (Android)\r\nAccept: */*\r\n"
+            out.write(("GET " + path + " HTTP/1.1\r\nHost: " + host + "\r\nUser-Agent: Mozilla/5.0 (Android)\r\nAccept: */*\r\n"
                     + "Connection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
             out.flush();
             InputStream in = secure.getInputStream();
@@ -421,7 +429,7 @@ final class ConfigTester {
         ExecutorService pool = Executors.newFixedThreadPool(targets.size());
         List<Future<InetAddress>> lookups = new ArrayList<>();
         for (String target : targets) {
-            lookups.add(pool.submit(() -> resolve(target)));
+            lookups.add(pool.submit(() -> resolve(hostOf(target))));
         }
         for (int i = 0; i < targets.size(); i++) {
             try {
@@ -432,6 +440,12 @@ final class ConfigTester {
             }
         }
         pool.shutdownNow();
+    }
+
+    /** Цель - домен или домен с путём запроса. */
+    private static String hostOf(String target) {
+        int slash = target.indexOf('/');
+        return slash < 0 ? target : target.substring(0, slash);
     }
 
     private InetAddress resolve(String host) throws IOException {
