@@ -50,6 +50,9 @@ final class BypassSettings {
     private static final String KEY_IPSET = "ipset_mode";
     private static final String KEY_DISCORD_FAKE = "discord_fake";
     private static final String KEY_HOSTS = "hosts_enabled";
+    private static final String KEY_FAKE_TTL = "fake_ttl:";
+    /** Значения, которые можно выбрать. Дальше 12 прыжков оборудование провайдера не стоит. */
+    static final int[] FAKE_TTL_CHOICES = {3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
 
     private static volatile boolean changed;
 
@@ -88,6 +91,19 @@ final class BypassSettings {
 
     static void setHostsEnabled(Context context, boolean enabled) {
         prefs(context).edit().putBoolean(KEY_HOSTS, enabled).apply();
+        changed = true;
+    }
+
+    /**
+     * TTL обманок, выбранный человеком для сети, 0 - как в конфиге и как нашёл подбор. Расстояние до оборудования
+     * провайдера и до сайтов у Wi-Fi и мобильной сети разное, поэтому значение своё для каждой.
+     */
+    static int fakeTtl(Context context, String kind) {
+        return prefs(context).getInt(KEY_FAKE_TTL + kind, 0);
+    }
+
+    static void setFakeTtl(Context context, String kind, int ttl) {
+        prefs(context).edit().putInt(KEY_FAKE_TTL + kind, ttl).apply();
         changed = true;
     }
 

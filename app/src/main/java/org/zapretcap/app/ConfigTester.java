@@ -188,7 +188,7 @@ final class ConfigTester {
             String name = names.get(i);
             String bestText = best == null ? "" : context.getString(R.string.test_progress_best, best.name, best.ok, targets.size());
             progress = context.getString(R.string.test_progress, i + 1, names.size(), name) + bestText;
-            List<String> args = Data.vpnArgs(context, name, 0);
+            List<String> args = args(name, 0);
             String key = String.join(" ", args);
             Result known = byArgs.get(key);
             Result result = known != null
@@ -201,13 +201,22 @@ final class ConfigTester {
             }
         }
         sort();
-        // прежние значения убираем только сейчас: отменённая проверка не должна их терять
-        clearSavedTtl();
-        tryOtherTtl();
+        // прежние значения убираем только сейчас: отменённая проверка не должна их терять.
+        // TTL, выбранный человеком, подбор не меняет
+        if (BypassSettings.fakeTtl(context, kind) == 0) {
+            clearSavedTtl();
+            tryOtherTtl();
+        }
         sort();
         recheckBest();
         sort();
         saveScores();
+    }
+
+    /** Аргументы конфига для проверки: с TTL, выбранным человеком для этой сети, если он есть. */
+    private List<String> args(String name, int ttl) throws IOException {
+        int chosen = BypassSettings.fakeTtl(context, kind);
+        return chosen > 0 ? Data.vpnArgs(context, name, chosen, true) : Data.vpnArgs(context, name, ttl);
     }
 
     private void addUserTargets() throws IOException {
@@ -232,7 +241,7 @@ final class ConfigTester {
                     return;
                 }
                 progress = context.getString(R.string.test_progress_recheck, base.name, i + 1, count);
-                Result again = withEngine(base.name, Data.vpnArgs(context, base.name, base.ttl), base.ttl);
+                Result again = withEngine(base.name, args(base.name, base.ttl), base.ttl);
                 worst = Math.min(worst, again.ok);
                 slowest = Math.max(slowest, again.millis);
             }

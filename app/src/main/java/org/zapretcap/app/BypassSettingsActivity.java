@@ -57,6 +57,8 @@ public class BypassSettingsActivity extends Activity {
         hostsUpdate.setOnClickListener(v -> update(false));
 
         setupFakes();
+        setupTtl(findViewById(R.id.fake_ttl_wifi), NetKind.WIFI);
+        setupTtl(findViewById(R.id.fake_ttl_cell), NetKind.CELL);
         showIpset();
         showHosts();
     }
@@ -92,6 +94,32 @@ public class BypassSettingsActivity extends Activity {
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 if (!choices.get(position).equals(BypassSettings.discordFake(BypassSettingsActivity.this))) {
                     BypassSettings.setDiscordFake(BypassSettingsActivity.this, choices.get(position));
+                }
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+    }
+
+    private void setupTtl(Spinner spinner, String kind) {
+        List<String> labels = new ArrayList<>();
+        labels.add(getString(R.string.fake_ttl_auto));
+        for (int ttl : BypassSettings.FAKE_TTL_CHOICES) {
+            labels.add(Integer.toString(ttl));
+        }
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, labels);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+        int current = BypassSettings.fakeTtl(this, kind);
+        spinner.setSelection(Math.max(labels.indexOf(Integer.toString(current)), 0), false);
+        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                int ttl = position == 0 ? 0 : BypassSettings.FAKE_TTL_CHOICES[position - 1];
+                if (ttl != BypassSettings.fakeTtl(BypassSettingsActivity.this, kind)) {
+                    BypassSettings.setFakeTtl(BypassSettingsActivity.this, kind, ttl);
                 }
             }
 

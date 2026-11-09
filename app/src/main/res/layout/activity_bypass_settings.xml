@@ -85,6 +85,54 @@
 
         <LinearLayout style="@style/Card" android:layout_marginTop="10dp">
 
+            <TextView style="@style/SectionTitle" android:text="@string/fake_ttl_title" />
+
+            <TextView style="@style/Muted" android:layout_marginTop="4dp" android:text="@string/fake_ttl_hint" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/net_wifi"
+                    android:textColor="@color/on_surface"
+                    android:textSize="15sp" />
+
+                <Spinner
+                    android:id="@+id/fake_ttl_wifi"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/net_cell"
+                    android:textColor="@color/on_surface"
+                    android:textSize="15sp" />
+
+                <Spinner
+                    android:id="@+id/fake_ttl_cell"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout style="@style/Card" android:layout_marginTop="10dp">
+
             <TextView style="@style/SectionTitle" android:text="@string/discord_fake_title" />
 
             <TextView style="@style/Muted" android:layout_marginTop="4dp" android:text="@string/discord_fake_hint" />

@@ -228,17 +228,27 @@ final class Data {
         return ordered;
     }
 
-    /** Аргументы ciadpi с TTL, который подобрала проверка конфигов. */
+    /** Аргументы ciadpi с TTL, который выбрал человек, а если не выбрал - который подобрала проверка конфигов. */
     static List<String> vpnArgs(Context context, String kind, String strategy) throws IOException {
-        return vpnArgs(context, strategy, BypassVpnService.prefs(context).getInt(ttlKey(kind, strategy), 0));
+        int chosen = BypassSettings.fakeTtl(context, kind);
+        if (chosen > 0) {
+            return vpnArgs(context, strategy, chosen, true);
+        }
+        return vpnArgs(context, strategy, BypassVpnService.prefs(context).getInt(ttlKey(kind, strategy), 0), false);
+    }
+
+    static List<String> vpnArgs(Context context, String strategy, int ttl) throws IOException {
+        return vpnArgs(context, strategy, ttl, false);
     }
 
     /**
      * Аргументы ciadpi: строка файла - группа, группы разделяет -An.
      *
      * @param ttl TTL фейков вместо записанного в конфиге, 0 - оставить как есть
+     * @param everyFake заменить TTL всех фейков с малым TTL, а не только стандартный {@link #FAKE_TTL}:
+     *                  так человек задаёт TTL для любого конфига, в том числе для vpn combo с его 5 и 6
      */
-    static List<String> vpnArgs(Context context, String strategy, int ttl) throws IOException {
+    static List<String> vpnArgs(Context context, String strategy, int ttl, boolean everyFake) throws IOException {
         File dir = dir(context);
         File file = new File(new File(dir, "strategies"), strategy + EXT_VPN);
         String lists = new File(dir, "lists").getPath();
@@ -267,12 +277,23 @@ final class Data {
             List<String> tokens = new ArrayList<>();
             for (String token : line.split("\\s+")) {
                 // -t 64 у фейков UDP намеренно обычный, менять нужно только малый TTL
-                boolean fakeTtl = ttl > 0 && previous.equals("-t") && token.equals(FAKE_TTL);
+                boolean fakeTtl = ttl > 0 && previous.equals("-t")
+                        && (everyFake ? isSmallTtl(token) : token.equals(FAKE_TTL));
                 tokens.add(fakeTtl ? Integer.toString(ttl) : token);
                 previous = token;
             }
             args.addAll(BypassSettings.substitute(context, tokens, lists, fake));
         }
         return args;
+    }
+
+    /** TTL фейка, который не должен дойти до сайта. Обычный TTL у фейков UDP (64) сюда не входит. */
+    private static boolean isSmallTtl(String token) {
+        try {
+            int value = Integer.parseInt(token);
+            return value > 0 && value < 32;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 }

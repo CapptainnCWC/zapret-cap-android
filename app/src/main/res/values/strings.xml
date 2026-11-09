@@ -109,6 +109,9 @@
     <string name="ipset_loaded_hint">Обход работает и для адресов из списка подсетей zapret-discord-youtube, даже если сайта нет в списках доменов.</string>
     <string name="ipset_any_hint">Обход для всех сайтов, кроме «Не трогать». Может сломать сайты, которые работают и без обхода.</string>
     <string name="ipset_info">Подсетей: %1$d · %2$s</string>
+    <string name="fake_ttl_title">TTL обманок</string>
+    <string name="fake_ttl_hint">Обманка должна дойти до оборудования провайдера, но не до сайта. Если с обходом перестают грузиться сайты или приложения, которые работают и без него, TTL велик: уменьшите. Если заблокированный сайт не открывается и с обходом, TTL мал: увеличьте. «Авто» берёт TTL из конфига и то, что нашёл «Подобрать».</string>
+    <string name="fake_ttl_auto">Авто</string>
     <string name="discord_fake_title">Фейк для голоса Discord</string>
     <string name="discord_fake_hint">Пакет-обманка перед голосовыми соединениями Discord. Если голос не подключается, попробуйте другой.</string>
     <string name="fake_default">Как в стратегии (ACTIVE_DISCORD_UDP)</string>
