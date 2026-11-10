@@ -24,6 +24,8 @@ final class Data {
     /** TTL фейков в конфигах. Если подбор нашёл значение лучше, оно хранится отдельно для каждого конфига. */
     static final String FAKE_TTL = "8";
     static final String TTL_KEY_PREFIX = "ttl:";
+    /** Порты Firebase Cloud Messaging, через них приходят пуш-уведомления почти всех приложений. */
+    static final String PUSH_PORTS = "5228-5230";
     static final String STRATEGY_KEY_PREFIX = "strategy:";
     static final String SCORE_KEY_PREFIX = "score:";
 
@@ -268,6 +270,11 @@ final class Data {
                 }
             }
         }
+        // Пуш-уведомления (FCM, порты 5228-5230) идут мимо обхода в любом конфиге: они не заблокированы,
+        // а обманка, дошедшая до близкого сервера Google, рвёт постоянное соединение, и уведомления не приходят
+        args.add("-V");
+        args.add(PUSH_PORTS);
+        first = false;
         for (String line : excludeFirst(lines)) {
             if (!first) {
                 args.add("-An");
