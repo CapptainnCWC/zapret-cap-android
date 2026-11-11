@@ -52,9 +52,11 @@ public class BypassVpnService extends VpnService {
      */
     private static final String TUN_DNS = "198.18.0.2";
     private static final int TUN_MTU = 8500;
-    private static final int TCP_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
-    /** Приложения, которые идут мимо VPN: сервисы Google Play, через них приходят пуш-уведомления. */
-    private static final String[] DIRECT_APPS = {"com.google.android.gms"};
+    /**
+     * Сколько туннель держит соединение без данных. Пуши Google проверяют связь раз в 9-29 минут (до 1730 с),
+     * поэтому нужен запас сверх получаса: иначе их соединение рвалось бы перед самой проверкой.
+     */
+    private static final int TCP_IDLE_TIMEOUT_MS = 60 * 60 * 1000;
     private static final int NOTIFICATION_ID = 1;
     private static final String CHANNEL = "bypass";
 
@@ -438,16 +440,6 @@ public class BypassVpnService extends VpnService {
         }
         builder.addDnsServer(TUN_DNS)
                 .addDisallowedApplication(getPackageName());
-        // Пуш-уведомления всех приложений приходят через сервисы Google Play. Они не заблокированы, а через
-        // туннель их постоянное соединение рвётся при каждом перезапуске обхода и на обманках: уведомления
-        // перестают приходить. Напрямую оно работает так же, как без обхода
-        for (String app : DIRECT_APPS) {
-            try {
-                builder.addDisallowedApplication(app);
-            } catch (android.content.pm.PackageManager.NameNotFoundException e) {
-                // на телефонах без сервисов Google их просто нет
-            }
-        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             builder.setMetered(false);
         }
