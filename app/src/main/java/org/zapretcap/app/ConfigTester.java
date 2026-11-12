@@ -71,12 +71,27 @@ final class ConfigTester {
         final int ttl;
         final int ok;
         final long millis;
+        /** Замирание на 16-20 КБ. Null, пока не проверено. */
+        final FreezeTest.Score freeze;
 
         Result(String name, int ttl, int ok, long millis) {
+            this(name, ttl, ok, millis, null);
+        }
+
+        Result(String name, int ttl, int ok, long millis, FreezeTest.Score freeze) {
             this.name = name;
             this.ttl = ttl;
             this.ok = ok;
             this.millis = millis;
+            this.freeze = freeze;
+        }
+
+        Result withFreeze(FreezeTest.Score score) {
+            return new Result(name, ttl, ok, millis, score);
+        }
+
+        int frozenPermille() {
+            return freeze == null ? 1001 : freeze.frozenPermille();
         }
     }
 
@@ -94,6 +109,7 @@ final class ConfigTester {
     private volatile String progress = "";
     private volatile String error;
     private volatile Result baseline;
+    private FreezeTest freezeTest;
 
     private ConfigTester(Context context) {
         this.context = context.getApplicationContext();
@@ -148,6 +164,16 @@ final class ConfigTester {
         return targets.size();
     }
 
+    /** Сколько адресов хостингов в проверке фризов. */
+    int freezeTargets() {
+        return freezeTest == null ? 0 : freezeTest.targets();
+    }
+
+    /** Сколько запросов проверки фризов в одном прогоне. */
+    int freezeTotal() {
+        return freezeTest == null ? 0 : freezeTest.probesPerRun();
+    }
+
     /** Для какой сети подобран конфиг: пока шла проверка, телефон мог перейти на другую. */
     String kind() {
         return kind;
@@ -177,8 +203,14 @@ final class ConfigTester {
         addUserTargets();
         resolveTargets();
 
+        progress = context.getString(R.string.test_progress_freeze_targets);
+        // в мобильной сети облегчённая проверка: полная отправляет по 7 МБ на каждый конфиг
+        freezeTest = new FreezeTest(context, this::resolve, NetKind.CELL.equals(kind));
+
         progress = context.getString(R.string.test_progress_direct);
-        baseline = measure("", 0, 0);
+        Result direct = measure("", 0, 0);
+        progress = context.getString(R.string.test_progress_direct) + "\n" + context.getString(R.string.test_progress_freeze);
+        baseline = direct.withFreeze(freezeTest.run(0));
 
         List<String> names = Data.strategies(context);
         // часть конфигов после перевода совпадает: незачем проверять одно и то же дважды
@@ -189,14 +221,15 @@ final class ConfigTester {
                 return;
             }
             String name = names.get(i);
-            String bestText = best == null ? "" : context.getString(R.string.test_progress_best, best.name, best.ok, targets.size());
+            String bestText = best == null ? "" : context.getString(R.string.test_progress_best, best.name, best.ok,
+                    targets.size(), best.freeze == null ? 0 : best.freeze.frozen, freezeTotal());
             progress = context.getString(R.string.test_progress, i + 1, names.size(), name) + bestText;
             List<String> args = args(name, 0);
             String key = String.join(" ", args);
             Result known = byArgs.get(key);
             Result result = known != null
-                    ? new Result(name, known.ttl, known.ok, known.millis)
-                    : withEngine(name, args, 0);
+                    ? new Result(name, known.ttl, known.ok, known.millis, known.freeze)
+                    : withEngine(name, args, freezeArgs(name, 0), 0);
             byArgs.put(key, result);
             results.add(result);
             if (best == null || better(result, best)) {
@@ -222,6 +255,12 @@ final class ConfigTester {
         return chosen > 0 ? Data.vpnArgs(context, name, chosen, true) : Data.vpnArgs(context, name, ttl);
     }
 
+    /** Те же аргументы, но группы IPSet ловят любой адрес: фризы проверяются на адресах хостингов, как в Linux-версии. */
+    private List<String> freezeArgs(String name, int ttl) throws IOException {
+        int chosen = BypassSettings.fakeTtl(context, kind);
+        return chosen > 0 ? Data.vpnArgs(context, name, chosen, true, true) : Data.vpnArgs(context, name, ttl, false, true);
+    }
+
     private void addUserTargets() throws IOException {
         for (UserLists.Kind list : new UserLists.Kind[]{UserLists.Kind.GENERAL, UserLists.Kind.GOOGLE}) {
             for (String domain : UserLists.added(context, list)) {
@@ -239,16 +278,20 @@ final class ConfigTester {
             Result base = results.get(i);
             int worst = base.ok;
             long slowest = base.millis;
+            FreezeTest.Score frozenMost = base.freeze;
             for (int pass = 0; pass < RECHECK_TIMES; pass++) {
                 if (cancelled) {
                     return;
                 }
                 progress = context.getString(R.string.test_progress_recheck, base.name, i + 1, count);
-                Result again = withEngine(base.name, args(base.name, base.ttl), base.ttl);
+                Result again = withEngine(base.name, args(base.name, base.ttl), freezeArgs(base.name, base.ttl), base.ttl);
                 worst = Math.min(worst, again.ok);
                 slowest = Math.max(slowest, again.millis);
+                if (frozenMost == null || (again.freeze != null && again.freeze.frozenPermille() > frozenMost.frozenPermille())) {
+                    frozenMost = again.freeze;
+                }
             }
-            results.set(i, new Result(base.name, base.ttl, worst, slowest));
+            results.set(i, new Result(base.name, base.ttl, worst, slowest, frozenMost));
         }
     }
 
@@ -256,13 +299,21 @@ final class ConfigTester {
         SharedPreferences.Editor editor = BypassVpnService.prefs(context).edit();
         for (Result result : results) {
             editor.putString(Data.scoreKey(kind, result.name), result.ok + "/" + targets.size());
+            if (result.freeze != null) {
+                editor.putString(Data.freezeKey(kind, result.name), result.freeze.frozen + "/" + result.freeze.total());
+            } else {
+                editor.remove(Data.freezeKey(kind, result.name));
+            }
         }
         editor.apply();
     }
 
     /** Если даже лучшие конфиги не открыли всё, причина может быть в TTL фейков: он зависит от провайдера. */
     private void tryOtherTtl() throws IOException, InterruptedException {
-        if (results.isEmpty() || results.get(0).ok >= targets.size()) {
+        // TTL подбирается, если лучший конфиг открыл не всё или на нём есть фризы: фейк, дошедший до сервера,
+        // тоже может останавливать соединение
+        if (results.isEmpty() || (results.get(0).ok >= targets.size()
+                && results.get(0).freeze != null && results.get(0).freeze.frozen == 0)) {
             return;
         }
         List<Result> candidates = new ArrayList<>();
@@ -280,9 +331,12 @@ final class ConfigTester {
                     return;
                 }
                 progress = context.getString(R.string.test_progress_ttl, base.name, ttl);
-                Result attempt = withEngine(base.name, Data.vpnArgs(context, base.name, ttl), ttl);
-                // разница в скорости здесь случайна: другой TTL стоит сохранять, только если открылось больше сайтов
-                if (attempt.ok > improved.ok) {
+                Result attempt = withEngine(base.name, Data.vpnArgs(context, base.name, ttl),
+                        Data.vpnArgs(context, base.name, ttl, false, true), ttl);
+                // разница в скорости здесь случайна: другой TTL стоит сохранять, только если открылось больше
+                // сайтов или при том же числе сайтов меньше фризов
+                if (attempt.ok > improved.ok
+                        || (attempt.ok == improved.ok && attempt.frozenPermille() < improved.frozenPermille())) {
                     improved = attempt;
                 }
             }
@@ -304,28 +358,83 @@ final class ConfigTester {
         editor.apply();
     }
 
+    /** Как в Linux-версии: главное - открытые сайты, при равенстве меньше фризов, затем быстрее. */
+    private static final Comparator<Result> ORDER = Comparator.<Result>comparingInt(r -> -r.ok)
+            .thenComparingInt(Result::frozenPermille)
+            .thenComparingLong(r -> r.millis);
+
     private static boolean better(Result a, Result b) {
-        return a.ok > b.ok || (a.ok == b.ok && a.millis < b.millis);
+        return ORDER.compare(a, b) < 0;
     }
 
     private void sort() {
-        Collections.sort(results, Comparator.<Result>comparingInt(r -> -r.ok).thenComparingLong(r -> r.millis));
+        Collections.sort(results, ORDER);
     }
 
-    private Result withEngine(String name, List<String> args, int ttl) throws IOException, InterruptedException {
-        int port;
-        try (ServerSocket socket = new ServerSocket(0)) {
-            port = socket.getLocalPort();
-        }
-        Process process = new ProcessBuilder(Data.ciadpiCommand(context, port, 0, args)).redirectErrorStream(true).start();
+    /** Сайты с обычными аргументами, затем фризы с IPSet на любой адрес. Если аргументы совпадают, движок один. */
+    private Result withEngine(String name, List<String> args, List<String> freezeArgs, int ttl)
+            throws IOException, InterruptedException {
+        String base = progress;
+        Result sites;
+        FreezeTest.Score freeze;
+        Engine engine = Engine.start(context, args);
         try {
+            if (engine == null) {
+                // конфиг, который движок не принял, ничего не откроет
+                return new Result(name, ttl, 0, Long.MAX_VALUE, new FreezeTest.Score(0, 0, 0));
+            }
+            sites = measure(name, ttl, engine.port);
+            if (cancelled) {
+                return sites;
+            }
+            progress = base + "\n" + context.getString(R.string.test_progress_freeze);
+            if (freezeArgs.equals(args)) {
+                freeze = freezeTest.run(engine.port);
+                return sites.withFreeze(freeze);
+            }
+        } finally {
+            if (engine != null) {
+                engine.stop();
+            }
+        }
+        Engine freezeEngine = Engine.start(context, freezeArgs);
+        try {
+            freeze = freezeEngine == null ? new FreezeTest.Score(0, 0, 0) : freezeTest.run(freezeEngine.port);
+        } finally {
+            if (freezeEngine != null) {
+                freezeEngine.stop();
+            }
+            progress = base;
+        }
+        return sites.withFreeze(freeze);
+    }
+
+    /** Отдельный ciadpi на свободном порту. Null, если движок не принял аргументы. */
+    private static final class Engine {
+        final Process process;
+        final int port;
+
+        private Engine(Process process, int port) {
+            this.process = process;
+            this.port = port;
+        }
+
+        static Engine start(Context context, List<String> args) throws IOException, InterruptedException {
+            int port;
+            try (ServerSocket socket = new ServerSocket(0)) {
+                port = socket.getLocalPort();
+            }
+            Process process = new ProcessBuilder(Data.ciadpiCommand(context, port, 0, args)).redirectErrorStream(true).start();
             drain(process);
             if (!waitForPort(process, port)) {
-                // конфиг, который движок не принял, ничего не откроет
-                return new Result(name, ttl, 0, Long.MAX_VALUE);
+                process.destroy();
+                process.waitFor();
+                return null;
             }
-            return measure(name, ttl, port);
-        } finally {
+            return new Engine(process, port);
+        }
+
+        void stop() throws InterruptedException {
             process.destroy();
             process.waitFor();
         }

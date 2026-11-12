@@ -199,6 +199,11 @@ final class Data {
         return SCORE_KEY_PREFIX + kind + ":" + strategy;
     }
 
+    /** Итог проверки фризов: "застыло/всего". */
+    static String freezeKey(String kind, String strategy) {
+        return "freeze:" + kind + ":" + strategy;
+    }
+
     static List<String> ciadpiCommand(Context context, int port, int dnsPort, List<String> args) {
         List<String> command = new ArrayList<>();
         command.add(new File(context.getApplicationInfo().nativeLibraryDir, "libciadpi.so").getPath());
@@ -251,6 +256,12 @@ final class Data {
      *                  так человек задаёт TTL для любого конфига, в том числе для vpn combo с его 5 и 6
      */
     static List<String> vpnArgs(Context context, String strategy, int ttl, boolean everyFake) throws IOException {
+        return vpnArgs(context, strategy, ttl, everyFake, false);
+    }
+
+    /** @param anyIpset группы IPSet ловят любой адрес, как в режиме any: для проверки фризов на адресах хостингов */
+    static List<String> vpnArgs(Context context, String strategy, int ttl, boolean everyFake, boolean anyIpset)
+            throws IOException {
         File dir = dir(context);
         File file = new File(new File(dir, "strategies"), strategy + EXT_VPN);
         String lists = new File(dir, "lists").getPath();
@@ -289,7 +300,7 @@ final class Data {
                 tokens.add(fakeTtl ? Integer.toString(ttl) : token);
                 previous = token;
             }
-            args.addAll(BypassSettings.substitute(context, tokens, lists, fake));
+            args.addAll(BypassSettings.substitute(context, tokens, lists, fake, anyIpset));
         }
         return args;
     }

@@ -526,8 +526,11 @@ public class MainActivity extends Activity implements AppState.Listener {
         List<ConfigTester.Result> results = test.results();
         ConfigTester.Result best = results.get(0);
         int total = test.total();
-        int direct = test.baseline().ok;
-        boolean helps = best.ok > direct;
+        ConfigTester.Result baseline = test.baseline();
+        int direct = baseline.ok;
+        int freezeTotal = test.freezeTotal();
+        // как в Linux-версии: сначала сайты, при равенстве - меньше фризов
+        boolean helps = best.ok > direct || (best.ok == direct && best.frozenPermille() < baseline.frozenPermille());
         // конфиг запоминается для той сети, в которой шла проверка
         showKind(test.kind());
         if (helps) {
@@ -535,16 +538,21 @@ public class MainActivity extends Activity implements AppState.Listener {
         }
         List<String> rows = new ArrayList<>();
         for (ConfigTester.Result result : results) {
+            int frozen = result.freeze == null ? 0 : result.freeze.frozen;
+            int checked = result.freeze == null ? 0 : result.freeze.total();
             rows.add(result.ttl > 0
-                    ? getString(R.string.test_row_ttl, result.ok, total, result.name, result.ttl)
-                    : getString(R.string.test_row, result.ok, total, result.name));
+                    ? getString(R.string.test_row_ttl, result.ok, total, result.name, frozen, checked, result.ttl)
+                    : getString(R.string.test_row, result.ok, total, result.name, frozen, checked));
         }
         TextView header = new TextView(this);
         int padding = (int) (20 * getResources().getDisplayMetrics().density);
         header.setPadding(padding, padding / 2, padding, padding / 2);
+        int bestFrozen = best.freeze == null ? 0 : best.freeze.frozen;
+        int directFrozen = baseline.freeze == null ? 0 : baseline.freeze.frozen;
         header.setText(helps
-                ? getString(R.string.test_chosen, best.name, best.ok, total, direct)
-                : getString(R.string.test_none, direct, total));
+                ? getString(R.string.test_chosen, best.name, best.ok, total, bestFrozen, freezeTotal, direct,
+                        directFrozen, test.freezeTargets())
+                : getString(R.string.test_none, direct, total, directFrozen, freezeTotal));
         ListView rowsView = new ListView(this);
         rowsView.addHeaderView(header, null, false);
         rowsView.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, rows));
@@ -643,7 +651,9 @@ public class MainActivity extends Activity implements AppState.Listener {
             String score = prefs.getString(Data.scoreKey(editingKind, name), null);
             boolean recommended = name.equals(Data.recommended(editingKind));
             if (score != null) {
-                detail.setText(getString(recommended ? R.string.config_score_recommended : R.string.config_score, score));
+                String freeze = prefs.getString(Data.freezeKey(editingKind, name), null);
+                String text = getString(recommended ? R.string.config_score_recommended : R.string.config_score, score);
+                detail.setText(freeze == null ? text : text + getString(R.string.config_freeze, freeze));
             } else if (recommended) {
                 detail.setText(R.string.config_recommended);
             }

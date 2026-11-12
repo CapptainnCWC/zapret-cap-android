@@ -160,7 +160,12 @@ final class BypassSettings {
      * Подставляет настройки в аргументы движка. В режиме any у групп IPSet пропадает -j: они ловят любой адрес.
      */
     static List<String> substitute(Context context, List<String> tokens, String lists, String fake) {
-        IpsetMode mode = ipsetMode(context);
+        return substitute(context, tokens, lists, fake, false);
+    }
+
+    /** @param anyIpset как режим any, что бы ни было выбрано: так проверка фризов видит обход на любом адресе */
+    static List<String> substitute(Context context, List<String> tokens, String lists, String fake, boolean anyIpset) {
+        IpsetMode mode = anyIpset ? IpsetMode.ANY : ipsetMode(context);
         String discordFake = discordFake(context);
         List<String> out = new ArrayList<>(tokens.size());
         for (int i = 0; i < tokens.size(); i++) {
