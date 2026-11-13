@@ -6,6 +6,9 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.os.PowerManager;
+import android.content.IntentFilter;
+import android.content.BroadcastReceiver;
 import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
 import android.net.ConnectivityManager;
@@ -116,6 +119,8 @@ public class BypassVpnService extends VpnService {
     private DnsForwarder dns;
     private int dnsPort;
     private int quickRestarts;
+    private String tunnelStopReason = "туннель пересоздаётся";
+    private BroadcastReceiver powerEvents;
     private long lastEngineStart;
 
     static SharedPreferences prefs(Context context) {
@@ -131,6 +136,8 @@ public class BypassVpnService extends VpnService {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+            PushLog.init(this);
+            PushLog.event("обход выключен кнопкой");
             runOnWorker(() -> stop(null));
             return START_NOT_STICKY;
         }
@@ -165,6 +172,8 @@ public class BypassVpnService extends VpnService {
             return;
         }
         Log.i(TAG, "network changed: " + network + " -> " + next);
+        PushLog.snapshot("перед сменой сети");
+        PushLog.event("сменилась сеть (" + NetKind.current(this) + "), движок перезапускается: соединения через него оборвутся");
         String name = Data.strategyFor(this, NetKind.current(this));
         start(name);
     }
@@ -186,6 +195,7 @@ public class BypassVpnService extends VpnService {
     }
 
     private void restartAfterFailure(String reason) {
+        PushLog.event("сбой движка: " + reason);
         long now = System.currentTimeMillis();
         quickRestarts = now - lastEngineStart < QUICK_RESTART_MS ? quickRestarts + 1 : 0;
         if (quickRestarts >= MAX_QUICK_RESTARTS) {
@@ -198,11 +208,13 @@ public class BypassVpnService extends VpnService {
     @Override
     public void onRevoke() {
         // VPN включили у другого приложения или отозвали разрешение
+        PushLog.event("VPN забрало другое приложение или отозвано разрешение");
         runOnWorker(() -> stop(null));
     }
 
     @Override
     public void onDestroy() {
+        unregisterPowerEvents();
         main.removeCallbacksAndMessages(null);
         unregisterNetwork();
         worker.execute(this::releaseEngines);
@@ -212,6 +224,10 @@ public class BypassVpnService extends VpnService {
 
     private void start(String name) {
         AppState.set(AppState.Phase.STARTING, name, null);
+        PushLog.init(this);
+        if (ciadpi != null) {
+            PushLog.snapshot("перед перезапуском движка");
+        }
         try {
             registerNetwork();
             Data.extract(this);
@@ -243,6 +259,10 @@ public class BypassVpnService extends VpnService {
                 setUnderlyingNetworks(new Network[]{active});
             }
             strategy = name;
+            PushLog.event("обход работает: конфиг " + name + ", сеть " + kind
+                    + ", IPSet " + BypassSettings.ipsetMode(this) + ", TTL обманок "
+                    + (BypassSettings.fakeTtl(this, kind) == 0 ? "авто" : BypassSettings.fakeTtl(this, kind)));
+            registerPowerEvents();
             showNotification(name);
             main.removeCallbacks(healthTick);
             main.postDelayed(healthTick, HEALTH_INTERVAL_MS);
@@ -267,6 +287,43 @@ public class BypassVpnService extends VpnService {
         dns.setHosts(BypassSettings.hosts(this));
         if (tun == null || changedNetwork) {
             dns.warmUp();
+        }
+    }
+
+    /** Экран и сон телефона: в Doze система сама откладывает сеть приложений, это важно для разбора пушей. */
+    private void registerPowerEvents() {
+        if (powerEvents != null) {
+            return;
+        }
+        powerEvents = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                String action = intent.getAction();
+                if (Intent.ACTION_SCREEN_OFF.equals(action)) {
+                    PushLog.event("экран выключен");
+                } else if (Intent.ACTION_SCREEN_ON.equals(action)) {
+                    PushLog.event("экран включён");
+                } else if (PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED.equals(action)) {
+                    boolean idle = getSystemService(PowerManager.class).isDeviceIdleMode();
+                    PushLog.event(idle ? "телефон уснул (Doze)" : "телефон вышел из Doze");
+                }
+            }
+        };
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_SCREEN_OFF);
+        filter.addAction(Intent.ACTION_SCREEN_ON);
+        filter.addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED);
+        registerReceiver(powerEvents, filter);
+    }
+
+    private void unregisterPowerEvents() {
+        if (powerEvents != null) {
+            try {
+                unregisterReceiver(powerEvents);
+            } catch (IllegalArgumentException ignored) {
+                // уже снят
+            }
+            powerEvents = null;
         }
     }
 
@@ -307,6 +364,11 @@ public class BypassVpnService extends VpnService {
     }
 
     private void stop(String error) {
+        if (error != null) {
+            PushLog.event("обход остановлен из-за ошибки: " + error);
+        }
+        tunnelStopReason = "обход выключен";
+        unregisterPowerEvents();
         main.removeCallbacksAndMessages(null);
         unregisterNetwork();
         releaseEngines();
@@ -330,7 +392,8 @@ public class BypassVpnService extends VpnService {
 
     private void closeTunnel() {
         if (tun != null) {
-            PushLog.stopTail();
+            PushLog.stopTail(tunnelStopReason);
+            tunnelStopReason = "туннель пересоздаётся";
             TunBridge.TProxyStopService();
             try {
                 tun.close();

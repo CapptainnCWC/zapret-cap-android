@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <time.h>
 #include <string.h>
 
 #include <lwip/tcp.h>
@@ -43,6 +44,63 @@ task_io_yielder (HevTaskYieldType type, void *data)
     return res;
 }
 
+/*
+ * Zapret Cap: строка о каждом TCP-соединении приложения. По адресам и портам служба VPN узнаёт у Android,
+ * какое приложение его открыло. "O id откуда порт куда порт" при открытии,
+ * "D id отправлено получено" при начале обмена после тишины, "C id отправлено получено причина" при закрытии.
+ */
+static FILE *session_log_file;
+
+static void
+session_log (const char *fmt, ...)
+{
+    const char *path;
+    va_list args;
+
+    if (!session_log_file) {
+        path = hev_config_get_misc_session_log ();
+        if (!path)
+            return;
+        session_log_file = fopen (path, "a");
+        if (!session_log_file)
+            return;
+        setvbuf (session_log_file, NULL, _IOLBF, 0);
+    }
+    va_start (args, fmt);
+    vfprintf (session_log_file, fmt, args);
+    va_end (args);
+}
+
+static long long
+now_ms (void)
+{
+    struct timespec t;
+
+    clock_gettime (CLOCK_MONOTONIC, &t);
+    return (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000;
+}
+
+/*
+ * Пуш приходит коротким обменом после тишины. Пока через соединение прошло меньше 2 МБ (а пуш-каналы такие),
+ * отмечаем каждую порцию данных, у больших - только начало обмена после тишины, чтобы не раздувать журнал.
+ */
+static void
+session_activity (HevSocks5SessionTCP *self)
+{
+    long long now = now_ms ();
+
+    if (self->up + self->down < 2 * 1024 * 1024 || now - self->last_activity >= 3000)
+        session_log ("D %p %llu %llu\n", self, self->up, self->down);
+    self->last_activity = now;
+}
+
+static void
+session_end (HevSocks5SessionTCP *self, const char *reason)
+{
+    if (!self->end)
+        self->end = reason;
+}
+
 static int
 tcp_splice_f (HevSocks5SessionTCP *self)
 {
@@ -57,6 +115,7 @@ tcp_splice_f (HevSocks5SessionTCP *self)
             iov[iovc].iov_len = p->len;
         }
     } else if (self->pcb_eof) {
+        session_end (self, "app-closed");
         res = -1;
     } else {
         res = 0;
@@ -70,6 +129,8 @@ tcp_splice_f (HevSocks5SessionTCP *self)
             else
                 res = -1;
         } else {
+            self->up += s;
+            session_activity (self);
             hev_task_mutex_lock (self->mutex);
             while (s > 0) {
                 u16_t n = (s > 0xffff) ? 0xffff : s;
@@ -102,9 +163,13 @@ tcp_splice_b (HevSocks5SessionTCP *self)
         if (0 >= s) {
             if ((0 > s) && (EAGAIN == errno))
                 res = 0;
-            else
+            else {
+                session_end (self, s == 0 ? "server-closed" : "server-error");
                 res = -1;
+            }
         } else {
+            self->down += s;
+            session_activity (self);
             hev_ring_buffer_write_finish (self->buffer, s);
         }
     } else {
@@ -177,36 +242,11 @@ tcp_err_handler (void *arg, err_t err)
 {
     HevSocks5SessionTCP *self = arg;
 
+    session_end (self, "app-reset");
     self->pcb = NULL;
     hev_socks5_session_terminate (HEV_SOCKS5_SESSION (self));
 }
 
-
-/*
- * Zapret Cap: строка о каждом TCP-соединении приложения. По адресам и портам служба VPN узнаёт у Android,
- * какое приложение его открыло. "O id откуда порт куда порт" при открытии, "C id" при закрытии.
- */
-static FILE *session_log_file;
-
-static void
-session_log (const char *fmt, ...)
-{
-    const char *path;
-    va_list args;
-
-    if (!session_log_file) {
-        path = hev_config_get_misc_session_log ();
-        if (!path)
-            return;
-        session_log_file = fopen (path, "a");
-        if (!session_log_file)
-            return;
-        setvbuf (session_log_file, NULL, _IOLBF, 0);
-    }
-    va_start (args, fmt);
-    vfprintf (session_log_file, fmt, args);
-    va_end (args);
-}
 
 HevSocks5SessionTCP *
 hev_socks5_session_tcp_new (struct tcp_pcb *pcb, HevTaskMutex *mutex)
@@ -297,6 +337,10 @@ hev_socks5_session_tcp_splice (HevSocks5Session *base)
     if (!self->pcb)
         return;
 
+    /* соединение с сервером установлено: дальше идут данные */
+    self->last_activity = now_ms ();
+    session_log ("E %p\n", self);
+
     /* Hold whole (super) segments, a full buffer is sent in full packets. */
     tcp_buffer_size = hev_config_get_misc_tcp_buffer_size ();
     if (tcp_buffer_size > self->pcb->mss)
@@ -310,8 +354,10 @@ hev_socks5_session_tcp_splice (HevSocks5Session *base)
             released = 0;
 
         released = hev_socks5_session_idle_wait (base, released);
-        if (released < 0)
+        if (released < 0) {
+            session_end (self, "idle-timeout");
             break;
+        }
     }
 }
 
@@ -386,7 +432,10 @@ hev_socks5_session_tcp_destruct (HevObject *base)
     HevSocks5SessionTCP *self = HEV_SOCKS5_SESSION_TCP (base);
 
     LOG_D ("%p socks5 session tcp destruct", self);
-    session_log ("C %p\n", self);
+    /* E не было: до сервера не подключились */
+    session_log ("C %p %llu %llu %s\n", self, self->up, self->down,
+                 self->end ? self->end
+                           : (self->last_activity ? "stopped" : "connect-failed"));
 
     hev_task_mutex_lock (self->mutex);
     if (self->pcb) {

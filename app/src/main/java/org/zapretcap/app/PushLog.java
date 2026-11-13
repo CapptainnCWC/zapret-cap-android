@@ -56,6 +56,10 @@ final class PushLog {
     private static final ArrayDeque<Conn> RECENT = new ArrayDeque<>();
     private static final Map<String, String> SDKS = new ConcurrentHashMap<>();
     private static volatile Thread tail;
+    private static volatile long lastStop;
+    private static final long LONG_LIVED_MS = 5 * 60_000;
+    private static final long SNAPSHOT_MS = 15 * 60_000;
+    private static final long BURST_GAP_MS = 1500;
 
     private static final class Conn {
         final long opened = System.currentTimeMillis();
@@ -64,7 +68,15 @@ final class PushLog {
         String address;
         int port;
         String host;
+        /** Пуш-канал или долгое соединение: только такие пишутся в журнал. */
         String channel;
+        boolean established;
+        long up;
+        long down;
+        long lastData;
+        long pendingUp;
+        long pendingDown;
+        long quietBefore;
     }
 
     private PushLog() {
@@ -193,7 +205,7 @@ final class PushLog {
     /** Читает журнал соединений hev, пока работает туннель. Файл только обрезается: hev держит его открытым. */
     static synchronized void startTail(Context context, File sessions) {
         init(context);
-        stopTail();
+        stopTail("туннель пересоздаётся");
         try {
             new RandomAccessFile(sessions, "rw").setLength(0);
         } catch (IOException e) {
@@ -205,16 +217,24 @@ final class PushLog {
         thread.setDaemon(true);
         tail = thread;
         thread.start();
-        write("== обход включён, соединения пишутся");
+        write("== туннель запущен, соединения пишутся");
     }
 
-    static synchronized void stopTail() {
+    /** Перед остановкой туннеля: состояние каналов в этот момент и есть главное, что нужно для разбора. */
+    static synchronized void stopTail(String reason) {
         Thread thread = tail;
-        tail = null;
-        if (thread != null) {
-            thread.interrupt();
-            write("== обход выключен, соединения не видны (уведомления пишутся дальше)");
+        if (thread == null) {
+            return;
         }
+        snapshot("перед остановкой туннеля (" + reason + ")");
+        tail = null;
+        thread.interrupt();
+        lastStop = System.currentTimeMillis();
+        write("== туннель остановлен: соединения больше не видны, уведомления пишутся дальше");
+    }
+
+    static void event(String text) {
+        write("== " + text);
     }
 
     private static void tailLoop(Context context, File sessions) {
@@ -249,11 +269,90 @@ final class PushLog {
             } catch (IOException e) {
                 Log.w(TAG, "tail", e);
             }
+            periodic();
             try {
                 Thread.sleep(100);
             } catch (InterruptedException e) {
                 return;
             }
+        }
+    }
+
+    private static long lastSnapshot = System.currentTimeMillis();
+
+    /** Закончившиеся обмены данными, новые долгие соединения и снимок раз в 15 минут. */
+    private static void periodic() {
+        long now = System.currentTimeMillis();
+        for (Conn conn : OPEN.values()) {
+            if (conn.pendingUp + conn.pendingDown > 0 && now - conn.lastData >= BURST_GAP_MS) {
+                flush(conn);
+            }
+            if (conn.channel == null && conn.established && now - conn.opened >= LONG_LIVED_MS) {
+                conn.channel = "долгое соединение";
+                write("CONN long  " + conn.channel + " | " + conn.packages + " -> " + describe(conn)
+                        + ": открыто " + ago(now - conn.opened) + ", возможно свой пуш-канал приложения");
+            }
+        }
+        if (now - lastSnapshot >= SNAPSHOT_MS) {
+            lastSnapshot = now;
+            snapshot("раз в 15 минут");
+        }
+    }
+
+    private static void flush(Conn conn) {
+        if (conn.channel != null) {
+            write("DATA " + conn.channel + " | " + conn.packages + " -> " + describe(conn) + ": отправлено "
+                    + conn.pendingUp + " Б, получено " + conn.pendingDown + " Б, до этого тишина "
+                    + ago(conn.quietBefore));
+        }
+        conn.pendingUp = 0;
+        conn.pendingDown = 0;
+    }
+
+    /** Все пуш-каналы и долгие соединения сейчас: сколько открыты и когда по ним последний раз шли данные. */
+    static void snapshot(String title) {
+        long now = System.currentTimeMillis();
+        StringBuilder text = new StringBuilder("SNAPSHOT ").append(title);
+        int count = 0;
+        for (Conn conn : OPEN.values()) {
+            if (conn.channel == null) {
+                continue;
+            }
+            count++;
+            text.append("\n      ").append(conn.channel).append(" | ").append(conn.packages).append(" -> ")
+                    .append(describe(conn)).append(": открыто ").append(ago(now - conn.opened))
+                    .append(conn.established ? "" : ", до сервера НЕ подключено")
+                    .append(", отправлено ").append(conn.up).append(" Б, получено ").append(conn.down).append(" Б")
+                    .append(", последние данные ").append(conn.lastData == 0 ? "не было" : ago(now - conn.lastData) + " назад");
+        }
+        if (count == 0) {
+            text.append("\n      пуш-соединений и долгих соединений нет");
+        }
+        write(text.toString());
+    }
+
+    static String ago(long ms) {
+        long seconds = ms / 1000;
+        if (seconds < 60) {
+            return seconds + " с";
+        }
+        long minutes = seconds / 60;
+        if (minutes < 60) {
+            return minutes + " мин";
+        }
+        return minutes / 60 + " ч " + minutes % 60 + " мин";
+    }
+
+    private static String reason(String code) {
+        switch (code) {
+            case "server-closed": return "сервер закрыл";
+            case "server-error": return "сброс или ошибка со стороны сервера";
+            case "app-closed": return "приложение закрыло";
+            case "app-reset": return "приложение сбросило";
+            case "idle-timeout": return "туннель закрыл по тишине (60 мин)";
+            case "stopped": return "туннель остановлен";
+            case "connect-failed": return "не удалось подключиться к серверу";
+            default: return code;
         }
     }
 
@@ -287,12 +386,66 @@ final class PushLog {
             if (conn.channel != null) {
                 write("CONN open  " + conn.channel + " | " + conn.packages + " -> " + describe(conn));
             }
+        } else if (parts.length >= 2 && parts[0].equals("E")) {
+            Conn conn = OPEN.get(parts[1]);
+            if (conn != null) {
+                conn.established = true;
+            }
+        } else if (parts.length >= 4 && parts[0].equals("D")) {
+            Conn conn = OPEN.get(parts[1]);
+            if (conn == null) {
+                return;
+            }
+            long up;
+            long down;
+            try {
+                up = Long.parseLong(parts[2]);
+                down = Long.parseLong(parts[3]);
+            } catch (NumberFormatException e) {
+                return;
+            }
+            long now = System.currentTimeMillis();
+            if (conn.pendingUp + conn.pendingDown == 0) {
+                conn.quietBefore = now - (conn.lastData == 0 ? conn.opened : conn.lastData);
+            }
+            conn.pendingUp += up - conn.up;
+            conn.pendingDown += down - conn.down;
+            conn.up = up;
+            conn.down = down;
+            conn.lastData = now;
         } else if (parts.length >= 2 && parts[0].equals("C")) {
             Conn conn = OPEN.remove(parts[1]);
-            if (conn != null && conn.channel != null) {
-                long seconds = (System.currentTimeMillis() - conn.opened) / 1000;
+            if (conn == null) {
+                return;
+            }
+            long now = System.currentTimeMillis();
+            if (parts.length >= 5) {
+                try {
+                    long up = Long.parseLong(parts[2]);
+                    long down = Long.parseLong(parts[3]);
+                    if (up + down > conn.up + conn.down) {
+                        if (conn.pendingUp + conn.pendingDown == 0) {
+                            conn.quietBefore = now - (conn.lastData == 0 ? conn.opened : conn.lastData);
+                        }
+                        conn.pendingUp += up - conn.up;
+                        conn.pendingDown += down - conn.down;
+                        conn.up = up;
+                        conn.down = down;
+                        conn.lastData = now;
+                    }
+                } catch (NumberFormatException ignored) {
+                    // старый формат строки
+                }
+            }
+            if (conn.pendingUp + conn.pendingDown > 0) {
+                flush(conn);
+            }
+            if (conn.channel != null) {
                 write("CONN close " + conn.channel + " | " + conn.packages + " -> " + describe(conn)
-                        + " after " + seconds + " s");
+                        + ": было открыто " + ago(now - conn.opened) + ", отправлено " + conn.up + " Б, получено "
+                        + conn.down + " Б, последние данные "
+                        + (conn.lastData == 0 ? "не было" : ago(now - conn.lastData) + " назад")
+                        + ", причина: " + (parts.length >= 5 ? reason(parts[4]) : "?"));
             }
         }
     }
@@ -345,6 +498,10 @@ final class PushLog {
             text.append(" category=").append(category);
         }
         text.append("\n      встроено: ").append(sdks(context, pkg));
+        if (tail == null && lastStop > 0 && System.currentTimeMillis() - lastStop < 30 * 60_000) {
+            text.append("\n      пришло через ").append(ago(System.currentTimeMillis() - lastStop))
+                    .append(" после остановки туннеля");
+        }
         text.append("\n      открытые пуш-каналы: ").append(openChannels());
         text.append("\n      соединения приложения за минуту: ").append(recentOf(pkg));
         write(text.toString());
@@ -355,9 +512,11 @@ final class PushLog {
             return "не видно, обход выключен";
         }
         Map<String, Set<String>> byChannel = new LinkedHashMap<>();
+        long now = System.currentTimeMillis();
         for (Conn conn : OPEN.values()) {
             if (conn.channel != null) {
-                byChannel.computeIfAbsent(conn.channel, k -> new LinkedHashSet<>()).add(conn.packages);
+                byChannel.computeIfAbsent(conn.channel, k -> new LinkedHashSet<>()).add(conn.packages
+                        + (conn.lastData == 0 ? ", данных не было" : ", данные " + ago(now - conn.lastData) + " назад"));
             }
         }
         if (byChannel.isEmpty()) {

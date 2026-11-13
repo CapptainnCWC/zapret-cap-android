@@ -157,4 +157,7 @@
     <string name="push_log_clear">Очистить</string>
     <string name="push_log_empty">Журнал пока пуст</string>
     <string name="push_log_cleared">Журнал очищен</string>
+    <string name="push_log_mark">Пуш не пришёл: отметить в журнале</string>
+    <string name="push_log_mark_hint">Какое приложение и что не пришло, например «MAX, сообщение в 14:05»</string>
+    <string name="push_log_marked">Отмечено, состояние каналов записано</string>
 </resources>

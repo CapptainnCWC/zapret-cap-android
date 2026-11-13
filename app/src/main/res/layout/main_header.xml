@@ -50,6 +50,13 @@
                 android:layout_weight="1"
                 android:text="@string/push_log_clear" />
         </LinearLayout>
+
+        <TextView
+            android:id="@+id/push_log_mark"
+            style="@style/TonalButton"
+            android:layout_width="match_parent"
+            android:layout_marginTop="8dp"
+            android:text="@string/push_log_mark" />
     </LinearLayout>
 
     <LinearLayout

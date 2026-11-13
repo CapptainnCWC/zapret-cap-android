@@ -33,6 +33,11 @@ struct _HevSocks5SessionTCP
     HevTaskMutex *mutex;
     HevRingBuffer *buffer;
     int pcb_eof;
+    /* Zapret Cap: счётчики для журнала пушей */
+    unsigned long long up;
+    unsigned long long down;
+    long long last_activity;
+    const char *end;
 };
 
 struct _HevSocks5SessionTCPClass

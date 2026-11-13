@@ -104,6 +104,7 @@ public class MainActivity extends Activity implements AppState.Listener {
         header.findViewById(R.id.push_log_access).setOnClickListener(v -> startActivity(
                 new Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
         header.findViewById(R.id.push_log_send).setOnClickListener(v -> sendPushLog());
+        header.findViewById(R.id.push_log_mark).setOnClickListener(v -> markMissedPush());
         header.findViewById(R.id.push_log_clear).setOnClickListener(v -> {
             PushLog.clear(this);
             Toast.makeText(this, R.string.push_log_cleared, Toast.LENGTH_SHORT).show();
@@ -596,6 +597,25 @@ public class MainActivity extends Activity implements AppState.Listener {
                 getString(access ? R.string.push_log_notif_on : R.string.push_log_notif_off),
                 getString(tunnel ? R.string.push_log_conn_on : R.string.push_log_conn_off),
                 PushLog.sizeKb(this)));
+    }
+
+    private void markMissedPush() {
+        android.widget.EditText input = new android.widget.EditText(this);
+        input.setHint(R.string.push_log_mark_hint);
+        int padding = (int) (20 * getResources().getDisplayMetrics().density);
+        android.widget.FrameLayout box = new android.widget.FrameLayout(this);
+        box.setPadding(padding, padding / 2, padding, 0);
+        box.addView(input);
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.push_log_mark)
+                .setView(box)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    PushLog.write("MARK пуш не пришёл: " + input.getText().toString().trim());
+                    PushLog.snapshot("в момент отметки");
+                    Toast.makeText(this, R.string.push_log_marked, Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     private void sendPushLog() {
