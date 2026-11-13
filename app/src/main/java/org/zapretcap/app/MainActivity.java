@@ -47,6 +47,7 @@ public class MainActivity extends Activity implements AppState.Listener {
     private TextView error;
     private TextView hint;
     private Button toggle;
+    private TextView pushLogInfo;
     private ListView list;
     private ConfigAdapter adapter;
     private View hero;
@@ -72,6 +73,7 @@ public class MainActivity extends Activity implements AppState.Listener {
         @Override
         public void run() {
             updateTelegram();
+            updatePushLog();
             handler.postDelayed(this, 2000);
         }
     };
@@ -97,6 +99,16 @@ public class MainActivity extends Activity implements AppState.Listener {
         hero = header.findViewById(R.id.hero);
         heroIcon = header.findViewById(R.id.hero_icon);
         toggle = header.findViewById(R.id.toggle);
+        PushLog.init(this);
+        pushLogInfo = header.findViewById(R.id.push_log_info);
+        header.findViewById(R.id.push_log_access).setOnClickListener(v -> startActivity(
+                new Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
+        header.findViewById(R.id.push_log_send).setOnClickListener(v -> sendPushLog());
+        header.findViewById(R.id.push_log_clear).setOnClickListener(v -> {
+            PushLog.clear(this);
+            Toast.makeText(this, R.string.push_log_cleared, Toast.LENGTH_SHORT).show();
+            handler.postDelayed(this::updatePushLog, 300);
+        });
         footer.findViewById(R.id.open_bypass_settings).setOnClickListener(
                 v -> startActivity(new Intent(this, BypassSettingsActivity.class)));
         updateButton = footer.findViewById(R.id.check_update);
@@ -570,6 +582,34 @@ public class MainActivity extends Activity implements AppState.Listener {
 
     private void selectStrategy(String name) {
         onStrategyPicked(name);
+    }
+
+    private void updatePushLog() {
+        if (pushLogInfo == null) {
+            return;
+        }
+        boolean access = android.provider.Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners") != null
+                && android.provider.Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners")
+                .contains(getPackageName());
+        boolean tunnel = AppState.phase == AppState.Phase.ON;
+        pushLogInfo.setText(getString(R.string.push_log_info,
+                getString(access ? R.string.push_log_notif_on : R.string.push_log_notif_off),
+                getString(tunnel ? R.string.push_log_conn_on : R.string.push_log_conn_off),
+                PushLog.sizeKb(this)));
+    }
+
+    private void sendPushLog() {
+        if (!PushLog.file(this).exists()) {
+            Toast.makeText(this, R.string.push_log_empty, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Intent send = new Intent(Intent.ACTION_SEND)
+                .setType("text/plain")
+                .putExtra(Intent.EXTRA_STREAM, LogProvider.PUSH_LOG)
+                .putExtra(Intent.EXTRA_SUBJECT, "Zapret Cap: журнал пушей")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        send.setClipData(android.content.ClipData.newRawUri("", LogProvider.PUSH_LOG));
+        startActivity(Intent.createChooser(send, getString(R.string.push_log_send)));
     }
 
     private void onToggle() {

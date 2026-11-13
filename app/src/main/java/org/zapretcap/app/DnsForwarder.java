@@ -196,6 +196,7 @@ final class DnsForwarder {
         if (reply == null) {
             reply = servfail(query);
         }
+        PushLog.onDnsReply(reply);
         try {
             socket.send(new DatagramPacket(reply, reply.length, clientAddress, clientPort));
         } catch (IOException e) {

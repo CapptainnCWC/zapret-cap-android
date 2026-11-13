@@ -42,6 +42,8 @@ static int mapdns_netmask;
 static int mapdns_cache_size;
 
 static char log_file[1024];
+/* Zapret Cap: журнал TCP-соединений для поиска пуш-каналов */
+static char session_log[1024];
 static char pid_file[1024];
 static int max_session_count;
 static int task_stack_size;
@@ -430,6 +432,8 @@ hev_config_parse_misc (yaml_document_t *doc, yaml_node_t *base)
             strncpy (pid_file, value, 1024 - 1);
         else if (0 == strcmp (key, "log-file"))
             strncpy (log_file, value, 1024 - 1);
+        else if (0 == strcmp (key, "session-log"))
+            strncpy (session_log, value, 1024 - 1);
         else if (0 == strcmp (key, "log-level"))
             log_level = hev_config_parse_log_level (value);
         else if (0 == strcmp (key, "limit-nofile"))
@@ -521,6 +525,7 @@ hev_config_reset (void)
     memset (tun_name, 0, sizeof (tun_name));
     memset (tun_guid, 0, sizeof (tun_guid));
     memset (log_file, 0, sizeof (log_file));
+    memset (session_log, 0, sizeof (session_log));
     memset (pid_file, 0, sizeof (pid_file));
     memset (&srv, 0, sizeof (srv));
 
@@ -787,6 +792,15 @@ hev_config_get_misc_pid_file (void)
         return NULL;
 
     return pid_file;
+}
+
+const char *
+hev_config_get_misc_session_log (void)
+{
+    if (!session_log[0])
+        return NULL;
+
+    return session_log;
 }
 
 const char *

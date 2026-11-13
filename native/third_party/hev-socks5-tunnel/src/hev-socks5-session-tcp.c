@@ -8,6 +8,8 @@
  */
 
 #include <errno.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <lwip/tcp.h>
@@ -179,6 +181,33 @@ tcp_err_handler (void *arg, err_t err)
     hev_socks5_session_terminate (HEV_SOCKS5_SESSION (self));
 }
 
+
+/*
+ * Zapret Cap: строка о каждом TCP-соединении приложения. По адресам и портам служба VPN узнаёт у Android,
+ * какое приложение его открыло. "O id откуда порт куда порт" при открытии, "C id" при закрытии.
+ */
+static FILE *session_log_file;
+
+static void
+session_log (const char *fmt, ...)
+{
+    const char *path;
+    va_list args;
+
+    if (!session_log_file) {
+        path = hev_config_get_misc_session_log ();
+        if (!path)
+            return;
+        session_log_file = fopen (path, "a");
+        if (!session_log_file)
+            return;
+        setvbuf (session_log_file, NULL, _IOLBF, 0);
+    }
+    va_start (args, fmt);
+    vfprintf (session_log_file, fmt, args);
+    va_end (args);
+}
+
 HevSocks5SessionTCP *
 hev_socks5_session_tcp_new (struct tcp_pcb *pcb, HevTaskMutex *mutex)
 {
@@ -338,6 +367,16 @@ hev_socks5_session_tcp_construct (HevSocks5SessionTCP *self,
     self->mutex = mutex;
     self->data.self = self;
 
+    {
+        char src[IPADDR_STRLEN_MAX];
+        char dst[IPADDR_STRLEN_MAX];
+
+        ipaddr_ntoa_r (&pcb->remote_ip, src, sizeof (src));
+        ipaddr_ntoa_r (&pcb->local_ip, dst, sizeof (dst));
+        session_log ("O %p %s %u %s %u\n", self, src, pcb->remote_port, dst,
+                     pcb->local_port);
+    }
+
     return 0;
 }
 
@@ -347,6 +386,7 @@ hev_socks5_session_tcp_destruct (HevObject *base)
     HevSocks5SessionTCP *self = HEV_SOCKS5_SESSION_TCP (base);
 
     LOG_D ("%p socks5 session tcp destruct", self);
+    session_log ("C %p\n", self);
 
     hev_task_mutex_lock (self->mutex);
     if (self->pcb) {

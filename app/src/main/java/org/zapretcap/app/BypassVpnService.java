@@ -233,6 +233,7 @@ public class BypassVpnService extends VpnService {
                 tun = establish(ipv6);
                 tunHasIpv6 = ipv6;
                 writeTunnelConfig(ipv6);
+                PushLog.startTail(this, sessionLog());
                 if (!TunBridge.TProxyStartService(tunnelConfig().getPath(), tun.getFd())) {
                     throw new IOException("Не запустился hev-socks5-tunnel");
                 }
@@ -329,6 +330,7 @@ public class BypassVpnService extends VpnService {
 
     private void closeTunnel() {
         if (tun != null) {
+            PushLog.stopTail();
             TunBridge.TProxyStopService();
             try {
                 tun.close();
@@ -450,6 +452,10 @@ public class BypassVpnService extends VpnService {
         return descriptor;
     }
 
+    private File sessionLog() {
+        return new File(getCacheDir(), "sessions.log");
+    }
+
     private File tunnelConfig() {
         return new File(getCacheDir(), "tunnel.yml");
     }
@@ -467,7 +473,9 @@ public class BypassVpnService extends VpnService {
                 // постоянные соединения пушей молчат между проверками связи дольше 5 минут, принятых по умолчанию:
                 // туннель рвал бы их, и уведомления приходили бы с задержкой
                 + "  tcp-read-write-timeout: " + TCP_IDLE_TIMEOUT_MS + "\n"
-                + "  log-level: error\n";
+                + "  log-level: error\n"
+                // тестовая сборка: соединения для журнала пушей
+                + "  session-log: '" + sessionLog().getPath() + "'\n";
         try (FileOutputStream out = new FileOutputStream(tunnelConfig())) {
             out.write(config.getBytes(StandardCharsets.UTF_8));
         }

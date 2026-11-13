@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- только для обновления самого приложения из релиза на GitHub, установку подтверждает человек -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- тестовая сборка: журнал пушей узнаёт, какие пуш-SDK встроены в каждое приложение -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
     <application
         android:allowBackup="false"
@@ -75,5 +77,21 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="local vpn" />
         </service>
+        <!-- тестовая сборка: журнал пушей -->
+        <service
+            android:name=".PushNotificationListener"
+            android:exported="true"
+            android:label="Zapret Cap: журнал пушей"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <provider
+            android:name=".LogProvider"
+            android:authorities="org.zapretcap.app.logs"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>

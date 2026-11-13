@@ -61,6 +61,7 @@ int hev_config_get_misc_udp_read_write_timeout (void);
 int hev_config_get_misc_limit_nofile (void);
 const char *hev_config_get_misc_pid_file (void);
 const char *hev_config_get_misc_log_file (void);
+const char *hev_config_get_misc_session_log (void);
 int hev_config_get_misc_log_level (void);
 
 #endif /* __HEV_CONFIG_H__ */

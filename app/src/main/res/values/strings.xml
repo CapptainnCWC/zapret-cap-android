@@ -146,4 +146,15 @@
     <string name="test_progress_freeze_targets">Загружаем цели проверки фризов…</string>
     <string name="test_progress_freeze">Проверяем замирание на 16-20 КБ…</string>
     <string name="config_freeze">\u0020· фризов: %1$s</string>
+    <string name="push_log_title">Журнал пушей (тестовая сборка)</string>
+    <string name="push_log_info">Уведомления: %1$s · соединения: %2$s · журнал %3$d КБ</string>
+    <string name="push_log_notif_on">пишутся</string>
+    <string name="push_log_notif_off">нет доступа</string>
+    <string name="push_log_conn_on">пишутся</string>
+    <string name="push_log_conn_off">только при включённом обходе</string>
+    <string name="push_log_access">Доступ</string>
+    <string name="push_log_send">Отправить</string>
+    <string name="push_log_clear">Очистить</string>
+    <string name="push_log_empty">Журнал пока пуст</string>
+    <string name="push_log_cleared">Журнал очищен</string>
 </resources>
