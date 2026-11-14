@@ -43,7 +43,7 @@ android {
         }
         debug {
             // тестовая сборка с журналом пушей: в «О приложении» и на экране видно, что это не релиз
-            versionNameSuffix '_debug2'
+            versionNameSuffix '_debug3'
             // тем же ключом: отладочная сборка ставится поверх рабочей и сохраняет настройки и разрешение на VPN
             signingConfig keystoreFile.exists() ? signingConfigs.release : signingConfigs.debug
         }

@@ -48,6 +48,9 @@ public class MainActivity extends Activity implements AppState.Listener {
     private TextView hint;
     private Button toggle;
     private TextView pushLogInfo;
+    private View bgCard;
+    private TextView bgText;
+    private android.widget.LinearLayout bgButtons;
     private ListView list;
     private ConfigAdapter adapter;
     private View hero;
@@ -100,6 +103,9 @@ public class MainActivity extends Activity implements AppState.Listener {
         heroIcon = header.findViewById(R.id.hero_icon);
         toggle = header.findViewById(R.id.toggle);
         PushLog.init(this);
+        bgCard = header.findViewById(R.id.bg_card);
+        bgText = header.findViewById(R.id.bg_text);
+        bgButtons = header.findViewById(R.id.bg_buttons);
         pushLogInfo = header.findViewById(R.id.push_log_info);
         header.findViewById(R.id.push_log_access).setOnClickListener(v -> startActivity(
                 new Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
@@ -189,6 +195,8 @@ public class MainActivity extends Activity implements AppState.Listener {
             start();
             Toast.makeText(this, R.string.domains_applied, Toast.LENGTH_SHORT).show();
         }
+        // человек мог вернуться из настроек: проверяем заново и убираем уведомление, если всё исправлено
+        updateBackground();
         onStateChanged();
         statsTick.run();
         updateTest();
@@ -583,6 +591,49 @@ public class MainActivity extends Activity implements AppState.Listener {
 
     private void selectStrategy(String name) {
         onStrategyPicked(name);
+    }
+
+    /** Карточка с настройками, из-за которых система может останавливать обход. */
+    private void updateBackground() {
+        BackgroundChecks.refreshNotification(this);
+        List<BackgroundChecks.Issue> issues = BackgroundChecks.issues(this);
+        bgCard.setVisibility(issues.isEmpty() ? View.GONE : View.VISIBLE);
+        bgButtons.removeAllViews();
+        if (issues.isEmpty()) {
+            return;
+        }
+        StringBuilder text = new StringBuilder(getString(R.string.bg_card_text));
+        boolean unverifiable = false;
+        int margin = (int) (8 * getResources().getDisplayMetrics().density);
+        for (BackgroundChecks.Issue issue : issues) {
+            text.append("\n\n• ").append(issue.title).append(". ").append(issue.text);
+            TextView button = (TextView) getLayoutInflater().inflate(R.layout.item_tonal_button, bgButtons, false);
+            button.setText(issue.title + ": " + issue.button);
+            button.setOnClickListener(v -> {
+                try {
+                    startActivity(issue.action);
+                } catch (ActivityNotFoundException | SecurityException e) {
+                    startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:" + getPackageName())));
+                }
+            });
+            android.widget.LinearLayout.LayoutParams params = (android.widget.LinearLayout.LayoutParams) button.getLayoutParams();
+            params.topMargin = margin;
+            bgButtons.addView(button, params);
+            unverifiable |= issue.unverifiable;
+        }
+        if (unverifiable) {
+            TextView confirm = (TextView) getLayoutInflater().inflate(R.layout.item_tonal_button, bgButtons, false);
+            confirm.setText(R.string.bg_confirm);
+            confirm.setOnClickListener(v -> {
+                BackgroundChecks.confirmOem(this);
+                updateBackground();
+            });
+            android.widget.LinearLayout.LayoutParams params = (android.widget.LinearLayout.LayoutParams) confirm.getLayoutParams();
+            params.topMargin = margin;
+            bgButtons.addView(confirm, params);
+        }
+        bgText.setText(text);
     }
 
     private void updatePushLog() {

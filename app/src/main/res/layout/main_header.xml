@@ -4,6 +4,31 @@
     android:layout_height="wrap_content"
     android:orientation="vertical">
 
+    <!-- настройки фоновой работы: видна, только если что-то мешает -->
+    <LinearLayout
+        android:id="@+id/bg_card"
+        style="@style/Card"
+        android:layout_marginBottom="10dp"
+        android:padding="12dp"
+        android:visibility="gone">
+
+        <TextView
+            style="@style/SectionTitle"
+            android:text="@string/bg_card_title"
+            android:textColor="@color/danger" />
+
+        <TextView
+            android:id="@+id/bg_text"
+            style="@style/Muted"
+            android:layout_marginTop="2dp" />
+
+        <LinearLayout
+            android:id="@+id/bg_buttons"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </LinearLayout>
+
     <!-- тестовая сборка: журнал пушей -->
     <LinearLayout
         style="@style/Card"

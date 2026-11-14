@@ -60,6 +60,7 @@ final class PushLog {
     private static final long LONG_LIVED_MS = 5 * 60_000;
     private static final long SNAPSHOT_MS = 15 * 60_000;
     private static final long BURST_GAP_MS = 1500;
+    private static final long PAUSE_MS = 3 * 60_000;
 
     private static final class Conn {
         final long opened = System.currentTimeMillis();
@@ -229,6 +230,11 @@ final class PushLog {
         snapshot("перед остановкой туннеля (" + reason + ")");
         tail = null;
         thread.interrupt();
+        // соединения через туннель закончились вместе с ним: в снимках после остановки их быть не должно
+        OPEN.clear();
+        synchronized (RECENT) {
+            RECENT.clear();
+        }
         lastStop = System.currentTimeMillis();
         write("== туннель остановлен: соединения больше не видны, уведомления пишутся дальше");
     }
@@ -242,7 +248,15 @@ final class PushLog {
         long position = 0;
         StringBuilder partial = new StringBuilder();
         byte[] buffer = new byte[16384];
+        long lastTick = System.currentTimeMillis();
         while (!Thread.currentThread().isInterrupted()) {
+            long tick = System.currentTimeMillis();
+            if (tick - lastTick >= PAUSE_MS) {
+                // цикл крутится каждые 100 мс: долгий разрыв значит, что процесс с туннелем не работал
+                write("== пауза " + ago(tick - lastTick) + ": приложение не работало (телефон спал или система"
+                        + " заморозила приложение), туннель в это время, скорее всего, ничего не передавал");
+            }
+            lastTick = tick;
             try (RandomAccessFile in = new RandomAccessFile(sessions, "rw")) {
                 long length = in.length();
                 if (length < position) {
@@ -313,6 +327,10 @@ final class PushLog {
     static void snapshot(String title) {
         long now = System.currentTimeMillis();
         StringBuilder text = new StringBuilder("SNAPSHOT ").append(title);
+        if (tail == null) {
+            write(text.append("\n      соединения не видны: обход выключен").toString());
+            return;
+        }
         int count = 0;
         for (Conn conn : OPEN.values()) {
             if (conn.channel == null) {

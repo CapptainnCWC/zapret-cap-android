@@ -180,6 +180,8 @@ public class BypassVpnService extends VpnService {
 
     /** Движок может зависнуть, не завершившись. Тогда приложения остались бы без сети, а служба считала бы, что всё хорошо. */
     private void checkHealth() {
+        // человек мог исправить настройки из уведомления, не открывая приложение
+        BackgroundChecks.refreshNotification(this);
         Process process = ciadpi;
         if (process == null || port == 0) {
             return;
@@ -262,6 +264,8 @@ public class BypassVpnService extends VpnService {
             PushLog.event("обход работает: конфиг " + name + ", сеть " + kind
                     + ", IPSet " + BypassSettings.ipsetMode(this) + ", TTL обманок "
                     + (BypassSettings.fakeTtl(this, kind) == 0 ? "авто" : BypassSettings.fakeTtl(this, kind)));
+            PushLog.event(BackgroundChecks.summary(this));
+            BackgroundChecks.refreshNotification(this);
             registerPowerEvents();
             showNotification(name);
             main.removeCallbacks(healthTick);

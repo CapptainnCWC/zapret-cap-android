@@ -160,4 +160,23 @@
     <string name="push_log_mark">Пуш не пришёл: отметить в журнале</string>
     <string name="push_log_mark_hint">Какое приложение и что не пришло, например «MAX, сообщение в 14:05»</string>
     <string name="push_log_marked">Отмечено, состояние каналов записано</string>
+    <string name="bg_channel">Настройки фоновой работы</string>
+    <string name="bg_notification_title">Обход может засыпать, уведомления будут опаздывать</string>
+    <string name="bg_notification_text">С выключенным экраном система может остановить Zapret Cap, а вместе с ним и VPN. Тогда уведомления приходят только после включения экрана или выключения обхода. Исправьте:</string>
+    <string name="bg_card_title">Фоновая работа</string>
+    <string name="bg_card_text">С выключенным экраном система может остановить Zapret Cap, а вместе с ним и VPN: уведомления будут опаздывать до включения экрана.</string>
+    <string name="bg_battery_title">Оптимизация батареи включена</string>
+    <string name="bg_battery_text">Разрешите Zapret Cap работать без ограничений батареи.</string>
+    <string name="bg_battery_button">Батарея</string>
+    <string name="bg_restricted_title">Работа в фоне ограничена</string>
+    <string name="bg_restricted_text">В настройках приложения, в разделе батареи, снимите ограничение фоновой работы.</string>
+    <string name="bg_open_app_settings">Настройки</string>
+    <string name="bg_miui_title">Автозапуск запрещён</string>
+    <string name="bg_miui_text">Разрешите Zapret Cap автозапуск: без него MIUI останавливает приложение в фоне.</string>
+    <string name="bg_oem_title">Фоновая работа на %1$s</string>
+    <string name="bg_huawei_text">Батарея → Запуск приложений → Zapret Cap: выключите автоматическое управление и включите все три переключателя: автозапуск, косвенный запуск и работу в фоне.</string>
+    <string name="bg_samsung_text">Батарея → Ограничения фонового использования: уберите Zapret Cap из спящих приложений и добавьте в «Никогда не переводить в спящий режим».</string>
+    <string name="bg_oem_text">Разрешите Zapret Cap автозапуск и работу в фоне в настройках производителя.</string>
+    <string name="bg_autostart_button">Автозапуск</string>
+    <string name="bg_confirm">Уже настроил</string>
 </resources>
