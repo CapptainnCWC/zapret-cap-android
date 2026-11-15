@@ -46,7 +46,14 @@ public class MainActivity extends Activity implements AppState.Listener {
     private TextView status;
     private TextView error;
     private TextView hint;
+    private View wifiNameAccess;
+    private static final int REQUEST_LOCATION = 3;
+    private static final int REQUEST_BACKGROUND_LOCATION = 4;
     private Button toggle;
+    private View bgCard;
+    private TextView bgText;
+    private List<String> editingScopes = java.util.Collections.singletonList(NetKind.WIFI);
+    private android.widget.LinearLayout bgButtons;
     private ListView list;
     private ConfigAdapter adapter;
     private View hero;
@@ -94,9 +101,14 @@ public class MainActivity extends Activity implements AppState.Listener {
         statusDetail = header.findViewById(R.id.status_detail);
         error = header.findViewById(R.id.error);
         hint = header.findViewById(R.id.hint);
+        wifiNameAccess = header.findViewById(R.id.wifi_name_access);
+        wifiNameAccess.setOnClickListener(v -> requestWifiName());
         hero = header.findViewById(R.id.hero);
         heroIcon = header.findViewById(R.id.hero_icon);
         toggle = header.findViewById(R.id.toggle);
+        bgCard = header.findViewById(R.id.bg_card);
+        bgText = header.findViewById(R.id.bg_text);
+        bgButtons = header.findViewById(R.id.bg_buttons);
         footer.findViewById(R.id.open_bypass_settings).setOnClickListener(
                 v -> startActivity(new Intent(this, BypassSettingsActivity.class)));
         updateButton = footer.findViewById(R.id.check_update);
@@ -168,6 +180,12 @@ public class MainActivity extends Activity implements AppState.Listener {
         if (!kind.equals(lastKind)) {
             lastKind = kind;
             showKind(kind);
+        } else if (!NetKind.scopes(this, editingKind).equals(editingScopes)) {
+            // другая Wi-Fi сеть или стало известно её имя: у неё свой выбор и свои итоги подбора
+            showKind(editingKind);
+        } else {
+            // доступ к имени сети мог появиться в настройках, пока приложения не было на экране
+            updateWifiHint();
         }
         // работающий движок читает списки и настройки только при запуске
         boolean listsChanged = UserLists.consumeChanged();
@@ -176,6 +194,8 @@ public class MainActivity extends Activity implements AppState.Listener {
             start();
             Toast.makeText(this, R.string.domains_applied, Toast.LENGTH_SHORT).show();
         }
+        // человек мог вернуться из настроек: проверяем заново и убираем уведомление, если всё исправлено
+        updateBackground();
         onStateChanged();
         statsTick.run();
         updateTest();
@@ -204,6 +224,8 @@ public class MainActivity extends Activity implements AppState.Listener {
     /** Показать выбор конфига для сети. Сеть, в которой телефон сейчас, отмечена в названии вкладки. */
     private void showKind(String kind) {
         editingKind = kind;
+        // какая Wi-Fi сеть сейчас: итоги подбора и выбор хранятся для каждой отдельно
+        editingScopes = NetKind.scopes(this, kind);
         sortConfigs();
         String current = NetKind.current(this);
         tabWifi.setSelected(NetKind.WIFI.equals(kind));
@@ -239,7 +261,7 @@ public class MainActivity extends Activity implements AppState.Listener {
         }
         sortConfigs();
         adapter.notifyDataSetChanged();
-        hint.setText(R.string.hint_vpn);
+        updateWifiHint();
     }
 
     @Override
@@ -572,6 +594,110 @@ public class MainActivity extends Activity implements AppState.Listener {
         onStrategyPicked(name);
     }
 
+    /** Какая Wi-Fi сеть сейчас и, если её имя скрыто, кнопка, чтобы дать доступ. */
+    private void updateWifiHint() {
+        NetKind.WifiId wifi = NetKind.wifiId(this);
+        String text = getString(R.string.hint_vpn);
+        if (wifi != null) {
+            text += " " + (wifi.ssid != null ? getString(R.string.hint_wifi_named, wifi.ssid)
+                    : getString(R.string.hint_wifi_network, wifi.gateway));
+        }
+        hint.setText(text);
+        boolean backgroundMissing = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                && checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED;
+        wifiNameAccess.setVisibility(wifi != null && (wifi.ssid == null || backgroundMissing) ? View.VISIBLE : View.GONE);
+    }
+
+    /**
+     * Доступ к имени Wi-Fi по шагам: сначала местоположение, затем «Разрешить всегда» (без него служба в фоне имени
+     * не узнает), и включённая геолокация.
+     */
+    private void requestWifiName() {
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION}, REQUEST_LOCATION);
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                && checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.wifi_background_title)
+                    .setMessage(R.string.wifi_background_text)
+                    .setPositiveButton(R.string.wifi_background_go, (dialog, which) -> requestPermissions(
+                            new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION}, REQUEST_BACKGROUND_LOCATION))
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+            return;
+        }
+        android.location.LocationManager location = getSystemService(android.location.LocationManager.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && location != null && !location.isLocationEnabled()) {
+            Toast.makeText(this, R.string.wifi_location_off, Toast.LENGTH_LONG).show();
+            try {
+                startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+            } catch (ActivityNotFoundException ignored) {
+                // нет такого экрана: подсказка уже показана
+            }
+        }
+        updateWifiHint();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode == REQUEST_LOCATION || requestCode == REQUEST_BACKGROUND_LOCATION) {
+            boolean granted = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
+            if (granted && requestCode == REQUEST_LOCATION) {
+                // следующий шаг: «Разрешить всегда» и геолокация
+                requestWifiName();
+            }
+            // теперь сеть может узнаваться по имени: у неё своя запись выбора
+            showKind(editingKind);
+        }
+    }
+
+    /** Карточка с настройками, из-за которых система может останавливать обход. */
+    private void updateBackground() {
+        BackgroundChecks.refreshNotification(this);
+        List<BackgroundChecks.Issue> issues = BackgroundChecks.issues(this);
+        bgCard.setVisibility(issues.isEmpty() ? View.GONE : View.VISIBLE);
+        bgButtons.removeAllViews();
+        if (issues.isEmpty()) {
+            return;
+        }
+        StringBuilder text = new StringBuilder(getString(R.string.bg_card_text));
+        boolean unverifiable = false;
+        int margin = (int) (8 * getResources().getDisplayMetrics().density);
+        for (BackgroundChecks.Issue issue : issues) {
+            text.append("\n\n• ").append(issue.title).append(". ").append(issue.text);
+            TextView button = (TextView) getLayoutInflater().inflate(R.layout.item_tonal_button, bgButtons, false);
+            button.setText(issue.title + ": " + issue.button);
+            button.setOnClickListener(v -> {
+                try {
+                    startActivity(issue.action);
+                } catch (ActivityNotFoundException | SecurityException e) {
+                    startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:" + getPackageName())));
+                }
+            });
+            android.widget.LinearLayout.LayoutParams params = (android.widget.LinearLayout.LayoutParams) button.getLayoutParams();
+            params.topMargin = margin;
+            bgButtons.addView(button, params);
+            unverifiable |= issue.unverifiable;
+        }
+        if (unverifiable) {
+            TextView confirm = (TextView) getLayoutInflater().inflate(R.layout.item_tonal_button, bgButtons, false);
+            confirm.setText(R.string.bg_confirm);
+            confirm.setOnClickListener(v -> {
+                BackgroundChecks.confirmUnverifiable(this);
+                updateBackground();
+            });
+            android.widget.LinearLayout.LayoutParams params = (android.widget.LinearLayout.LayoutParams) confirm.getLayoutParams();
+            params.topMargin = margin;
+            bgButtons.addView(confirm, params);
+        }
+        bgText.setText(text);
+    }
+
     private void onToggle() {
         if (AppState.phase == AppState.Phase.OFF) {
             start();
@@ -648,10 +774,10 @@ public class MainActivity extends Activity implements AppState.Listener {
             row.findViewById(R.id.config_check).setVisibility(chosen ? View.VISIBLE : View.INVISIBLE);
             row.setBackgroundResource(chosen ? R.drawable.bg_row_selected : R.drawable.bg_row);
             TextView detail = row.findViewById(R.id.config_detail);
-            String score = prefs.getString(Data.scoreKey(editingKind, name), null);
+            String score = Data.scoped(prefs, editingScopes, scope -> Data.scoreKey(scope, name));
             boolean recommended = name.equals(Data.recommended(editingKind));
             if (score != null) {
-                String freeze = prefs.getString(Data.freezeKey(editingKind, name), null);
+                String freeze = Data.scoped(prefs, editingScopes, scope -> Data.freezeKey(scope, name));
                 String text = getString(recommended ? R.string.config_score_recommended : R.string.config_score, score);
                 detail.setText(freeze == null ? text : text + getString(R.string.config_freeze, freeze));
             } else if (recommended) {

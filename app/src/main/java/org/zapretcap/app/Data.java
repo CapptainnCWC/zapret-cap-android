@@ -1,6 +1,7 @@
 package org.zapretcap.app;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
@@ -120,8 +121,15 @@ final class Data {
 
     /** Конфиг для вида сети: выбранный человеком, а если выбора ещё не было, рекомендованный для этой сети. */
     static String strategyFor(Context context, String kind) {
-        String own = BypassVpnService.prefs(context).getString(STRATEGY_KEY_PREFIX + kind, null);
-        return own != null ? own : recommended(kind);
+        SharedPreferences prefs = BypassVpnService.prefs(context);
+        // своя запись этой сети, а в новой Wi-Fi сети - последний выбор для Wi-Fi
+        for (String scope : NetKind.scopes(context, kind)) {
+            String own = prefs.getString(STRATEGY_KEY_PREFIX + scope, null);
+            if (own != null) {
+                return own;
+            }
+        }
+        return recommended(kind);
     }
 
     /**
@@ -132,8 +140,24 @@ final class Data {
         return "vpn combo";
     }
 
+    /** Выбор запоминается для текущей Wi-Fi сети и заодно становится выбором по умолчанию для новых сетей. */
     static void setStrategyFor(Context context, String kind, String name) {
-        BypassVpnService.prefs(context).edit().putString(STRATEGY_KEY_PREFIX + kind, name).apply();
+        SharedPreferences.Editor editor = BypassVpnService.prefs(context).edit();
+        for (String scope : NetKind.scopes(context, kind)) {
+            editor.putString(STRATEGY_KEY_PREFIX + scope, name);
+        }
+        editor.apply();
+    }
+
+    /** Строка из самой точной записи, где она есть: сеть по имени, по адресам, общая для вида сети. */
+    static String scoped(SharedPreferences prefs, List<String> scopes, java.util.function.Function<String, String> key) {
+        for (String scope : scopes) {
+            String value = prefs.getString(key.apply(scope), null);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
     }
 
     /** Имена стратегий: general первая, номера по порядку, ALT2 раньше ALT10. */
@@ -241,7 +265,15 @@ final class Data {
         if (chosen > 0) {
             return vpnArgs(context, strategy, chosen, true);
         }
-        return vpnArgs(context, strategy, BypassVpnService.prefs(context).getInt(ttlKey(kind, strategy), 0), false);
+        SharedPreferences prefs = BypassVpnService.prefs(context);
+        int ttl = 0;
+        for (String scope : NetKind.scopes(context, kind)) {
+            if (prefs.contains(ttlKey(scope, strategy))) {
+                ttl = prefs.getInt(ttlKey(scope, strategy), 0);
+                break;
+            }
+        }
+        return vpnArgs(context, strategy, ttl, false);
     }
 
     static List<String> vpnArgs(Context context, String strategy, int ttl) throws IOException {

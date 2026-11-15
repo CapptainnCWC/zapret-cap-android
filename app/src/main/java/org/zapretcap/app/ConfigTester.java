@@ -99,6 +99,8 @@ final class ConfigTester {
 
     private final Context context;
     private final String kind;
+    /** Какая именно сеть: итоги и TTL запоминаются для неё, а для Wi-Fi ещё и как общие для новых сетей. */
+    private final List<String> scopes;
     private final List<String> targets = new ArrayList<>(Arrays.asList(TARGETS));
     private final List<Result> results = new ArrayList<>();
     private final Map<String, InetAddress> addresses = new LinkedHashMap<>();
@@ -114,6 +116,7 @@ final class ConfigTester {
     private ConfigTester(Context context) {
         this.context = context.getApplicationContext();
         kind = NetKind.current(context);
+        scopes = NetKind.scopes(context, kind);
     }
 
     /** Запускает проверку, а если она уже идёт, возвращает её. */
@@ -298,11 +301,13 @@ final class ConfigTester {
     private void saveScores() {
         SharedPreferences.Editor editor = BypassVpnService.prefs(context).edit();
         for (Result result : results) {
-            editor.putString(Data.scoreKey(kind, result.name), result.ok + "/" + targets.size());
-            if (result.freeze != null) {
-                editor.putString(Data.freezeKey(kind, result.name), result.freeze.frozen + "/" + result.freeze.total());
-            } else {
-                editor.remove(Data.freezeKey(kind, result.name));
+            for (String key : scopes) {
+                editor.putString(Data.scoreKey(key, result.name), result.ok + "/" + targets.size());
+                if (result.freeze != null) {
+                    editor.putString(Data.freezeKey(key, result.name), result.freeze.frozen + "/" + result.freeze.total());
+                } else {
+                    editor.remove(Data.freezeKey(key, result.name));
+                }
             }
         }
         editor.apply();
@@ -342,7 +347,11 @@ final class ConfigTester {
             }
             if (improved != base) {
                 results.set(results.indexOf(base), improved);
-                prefs.edit().putInt(Data.ttlKey(kind, base.name), improved.ttl).apply();
+                SharedPreferences.Editor editor = prefs.edit();
+                for (String scope : scopes) {
+                    editor.putInt(Data.ttlKey(scope, base.name), improved.ttl);
+                }
+                editor.apply();
             }
         }
     }
@@ -351,7 +360,11 @@ final class ConfigTester {
         SharedPreferences prefs = BypassVpnService.prefs(context);
         SharedPreferences.Editor editor = prefs.edit();
         for (String key : prefs.getAll().keySet()) {
-            if (key.startsWith(Data.TTL_KEY_PREFIX + kind + ":")) {
+            boolean ours = false;
+            for (String scope : scopes) {
+                ours |= key.startsWith(Data.TTL_KEY_PREFIX + scope + ":");
+            }
+            if (ours) {
                 editor.remove(key);
             }
         }

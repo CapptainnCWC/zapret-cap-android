@@ -4,6 +4,31 @@
     android:layout_height="wrap_content"
     android:orientation="vertical">
 
+    <!-- настройки фоновой работы: видна, только если что-то мешает -->
+    <LinearLayout
+        android:id="@+id/bg_card"
+        style="@style/Card"
+        android:layout_marginBottom="10dp"
+        android:padding="12dp"
+        android:visibility="gone">
+
+        <TextView
+            style="@style/SectionTitle"
+            android:text="@string/bg_card_title"
+            android:textColor="@color/danger" />
+
+        <TextView
+            android:id="@+id/bg_text"
+            style="@style/Muted"
+            android:layout_marginTop="2dp" />
+
+        <LinearLayout
+            android:id="@+id/bg_buttons"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </LinearLayout>
+
     <LinearLayout
         android:id="@+id/hero"
         style="@style/Card"
@@ -227,4 +252,13 @@
         android:paddingStart="4dp"
         android:paddingEnd="4dp"
         android:textSize="12sp" />
+
+    <!-- без имени Wi-Fi сети приложение различает их только по адресам роутера -->
+    <TextView
+        android:id="@+id/wifi_name_access"
+        style="@style/TonalButton"
+        android:layout_width="match_parent"
+        android:layout_marginBottom="8dp"
+        android:text="@string/wifi_name_access"
+        android:visibility="gone" />
 </LinearLayout>
