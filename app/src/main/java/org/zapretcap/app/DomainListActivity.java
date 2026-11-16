@@ -37,6 +37,7 @@ public class DomainListActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_domains);
+        SystemBars.apply(this);
         input = findViewById(R.id.domain_input);
         description = findViewById(R.id.domain_description);
         count = findViewById(R.id.domain_count);

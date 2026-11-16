@@ -88,6 +88,7 @@ public class MainActivity extends Activity implements AppState.Listener {
         super.onCreate(savedInstanceState);
         CrashLog.install(this);
         setContentView(R.layout.activity_main);
+        SystemBars.apply(this);
         prefs = BypassVpnService.prefs(this);
 
         list = findViewById(R.id.list);

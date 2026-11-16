@@ -107,13 +107,28 @@ final class BackgroundChecks {
         return maker.contains("xiaomi") || maker.contains("redmi") || maker.contains("poco");
     }
 
-    /** Экран батареи приложения в MIUI, где выбирается «Контроль активности». */
+    /**
+     * Экран батареи приложения, где выбирается «Контроль активности». В MIUI и HyperOS 1 это своя страница
+     * powerkeeper, в HyperOS 2 её убрали: там системный запрос про оптимизацию батареи перехватывает экран
+     * батареи приложения из «Безопасности». Если нет ни того, ни другого - настройки приложения.
+     */
     private static Intent miuiActivityIntent(Context context) {
-        Intent intent = new Intent().setComponent(new ComponentName("com.miui.powerkeeper",
+        PackageManager pm = context.getPackageManager();
+        Intent legacy = new Intent().setComponent(new ComponentName("com.miui.powerkeeper",
                 "com.miui.powerkeeper.ui.HiddenAppsConfigActivity"))
                 .putExtra("package_name", context.getPackageName())
                 .putExtra("package_label", context.getString(R.string.app_name));
-        return context.getPackageManager().resolveActivity(intent, 0) != null ? intent : appDetails(context);
+        if (pm.resolveActivity(legacy, 0) != null) {
+            return legacy;
+        }
+        Intent hyperOs = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                Uri.parse("package:" + context.getPackageName()));
+        android.content.pm.ResolveInfo target = pm.resolveActivity(hyperOs, PackageManager.MATCH_DEFAULT_ONLY);
+        if (target != null && target.activityInfo != null
+                && target.activityInfo.packageName.startsWith("com.miui.")) {
+            return hyperOs;
+        }
+        return appDetails(context);
     }
 
     /** Показывает или убирает уведомление о настройках. Вызывается при включении обхода и при открытии приложения. */

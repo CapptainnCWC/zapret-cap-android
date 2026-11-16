@@ -6,7 +6,6 @@
     android:clipToPadding="false"
     android:divider="@null"
     android:dividerHeight="4dp"
-    android:fitsSystemWindows="true"
     android:listSelector="@android:color/transparent"
     android:paddingStart="16dp"
     android:paddingTop="12dp"

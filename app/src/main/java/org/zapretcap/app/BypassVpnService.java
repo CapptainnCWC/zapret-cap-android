@@ -58,7 +58,6 @@ public class BypassVpnService extends VpnService {
      */
     private static final int TCP_IDLE_TIMEOUT_MS = 60 * 60 * 1000;
     private static final int NOTIFICATION_ID = 1;
-    private static final String CHANNEL = "bypass";
 
     /** Запуск, смена стратегии и остановка идут строго по очереди. */
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -480,9 +479,8 @@ public class BypassVpnService extends VpnService {
         NotificationManager manager = getSystemService(NotificationManager.class);
         Notification.Builder builder;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            manager.createNotificationChannel(new NotificationChannel(
-                    CHANNEL, getString(R.string.channel_name), NotificationManager.IMPORTANCE_LOW));
-            builder = new Notification.Builder(this, CHANNEL);
+            StatusChannels.ensure(this, StatusChannels.BYPASS, R.string.channel_name);
+            builder = new Notification.Builder(this, StatusChannels.BYPASS);
         } else {
             builder = new Notification.Builder(this);
         }
@@ -496,6 +494,7 @@ public class BypassVpnService extends VpnService {
                 .setContentText(getString(NetKind.CELL.equals(NetKind.current(this)) ? R.string.net_cell : R.string.net_wifi))
                 .setContentIntent(open)
                 .setOngoing(true)
+                .setOnlyAlertOnce(true)
                 .addAction(new Notification.Action.Builder(null, getString(R.string.notification_stop), stop).build())
                 .build();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -503,5 +502,7 @@ public class BypassVpnService extends VpnService {
         } else {
             startForeground(NOTIFICATION_ID, notification);
         }
+        // уведомление уже на новом канале: старый с низкой важностью можно убрать
+        StatusChannels.dropOld(this, StatusChannels.BYPASS);
     }
 }

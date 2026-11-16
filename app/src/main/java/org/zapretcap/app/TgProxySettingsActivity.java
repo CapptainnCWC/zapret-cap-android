@@ -37,6 +37,7 @@ public class TgProxySettingsActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_tg_settings);
+        SystemBars.apply(this);
         port = findViewById(R.id.tg_port);
         secret = findViewById(R.id.tg_secret);
         dcIps = findViewById(R.id.tg_dc_ips);

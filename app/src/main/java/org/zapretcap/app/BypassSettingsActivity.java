@@ -34,6 +34,7 @@ public class BypassSettingsActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_bypass_settings);
+        SystemBars.apply(this);
         findViewById(R.id.back).setOnClickListener(v -> finish());
 
         ipsetTabs = new TextView[]{findViewById(R.id.ipset_none), findViewById(R.id.ipset_loaded), findViewById(R.id.ipset_any)};

@@ -30,7 +30,6 @@ public class TelegramProxyService extends Service {
     static final String ACTION_RESTART = "org.zapretcap.app.TG_RESTART";
     static final String ACTION_STOP = "org.zapretcap.app.TG_STOP";
     private static final int NOTIFICATION_ID = 2;
-    private static final String CHANNEL = "telegram_proxy";
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private TgWsProxy proxy;
@@ -173,9 +172,8 @@ public class TelegramProxyService extends Service {
     private void showNotification() {
         Notification.Builder builder;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            getSystemService(NotificationManager.class).createNotificationChannel(new NotificationChannel(
-                    CHANNEL, getString(R.string.tg_channel_name), NotificationManager.IMPORTANCE_LOW));
-            builder = new Notification.Builder(this, CHANNEL);
+            StatusChannels.ensure(this, StatusChannels.TELEGRAM, R.string.tg_channel_name);
+            builder = new Notification.Builder(this, StatusChannels.TELEGRAM);
         } else {
             builder = new Notification.Builder(this);
         }
@@ -188,6 +186,7 @@ public class TelegramProxyService extends Service {
                 .setContentTitle(getString(R.string.tg_notification))
                 .setContentIntent(open)
                 .setOngoing(true)
+                .setOnlyAlertOnce(true)
                 .addAction(new Notification.Action.Builder(null, getString(R.string.notification_stop), stop).build())
                 .build();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -195,5 +194,6 @@ public class TelegramProxyService extends Service {
         } else {
             startForeground(NOTIFICATION_ID, notification);
         }
+        StatusChannels.dropOld(this, StatusChannels.TELEGRAM);
     }
 }
