@@ -46,6 +46,9 @@ public class MainActivity extends Activity implements AppState.Listener {
     private TextView status;
     private TextView error;
     private TextView hint;
+    private TextView modeVpn;
+    private TextView modeRoot;
+    private TextView modeHint;
     private View wifiNameAccess;
     private static final int REQUEST_LOCATION = 3;
     private static final int REQUEST_BACKGROUND_LOCATION = 4;
@@ -117,6 +120,12 @@ public class MainActivity extends Activity implements AppState.Listener {
         showUpdateState();
         tabWifi = header.findViewById(R.id.tab_wifi);
         tabCell = header.findViewById(R.id.tab_cell);
+        modeVpn = header.findViewById(R.id.mode_vpn);
+        modeRoot = header.findViewById(R.id.mode_root);
+        modeHint = header.findViewById(R.id.mode_hint);
+        modeVpn.setOnClickListener(v -> pickMode(false));
+        modeRoot.setOnClickListener(v -> pickMode(true));
+        showMode();
         tabWifi.setOnClickListener(v -> showKind(NetKind.WIFI));
         tabCell.setOnClickListener(v -> showKind(NetKind.CELL));
 
@@ -195,6 +204,11 @@ public class MainActivity extends Activity implements AppState.Listener {
             start();
             Toast.makeText(this, R.string.domains_applied, Toast.LENGTH_SHORT).show();
         }
+        // nfqws2 переживает остановку приложения: службу нужно вернуть, чтобы она снова за ним следила
+        if (BypassSettings.rootMode(this) && AppState.phase == AppState.Phase.OFF
+                && prefs.getBoolean(BypassVpnService.KEY_ROOT_ON, false)) {
+            startVpn();
+        }
         // человек мог вернуться из настроек: проверяем заново и убираем уведомление, если всё исправлено
         updateBackground();
         onStateChanged();
@@ -249,6 +263,48 @@ public class MainActivity extends Activity implements AppState.Listener {
         });
     }
 
+    private void showMode() {
+        boolean root = BypassSettings.rootMode(this);
+        modeVpn.setSelected(!root);
+        modeRoot.setSelected(root);
+        modeHint.setText(root ? R.string.mode_hint_root : R.string.mode_hint_vpn);
+    }
+
+    /** У режимов разные движки, стратегии и итоги подбора, поэтому переключение только при выключенном обходе. */
+    private void pickMode(boolean root) {
+        if (root == BypassSettings.rootMode(this)) {
+            return;
+        }
+        if (AppState.phase != AppState.Phase.OFF) {
+            Toast.makeText(this, R.string.mode_need_off, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (!root) {
+            applyMode(false);
+            return;
+        }
+        Toast.makeText(this, R.string.mode_root_checking, Toast.LENGTH_SHORT).show();
+        Thread check = new Thread(() -> {
+            boolean granted = RootShell.available(getApplicationContext());
+            handler.post(() -> {
+                if (granted) {
+                    applyMode(true);
+                } else {
+                    Toast.makeText(this, R.string.mode_root_denied, Toast.LENGTH_LONG).show();
+                }
+            });
+        }, "root-check");
+        check.setDaemon(true);
+        check.start();
+    }
+
+    private void applyMode(boolean root) {
+        BypassSettings.setRootMode(this, root);
+        showMode();
+        loadStrategies();
+        showKind(editingKind);
+    }
+
     private void loadStrategies() {
         names.clear();
         try {
@@ -271,7 +327,8 @@ public class MainActivity extends Activity implements AppState.Listener {
         boolean on = phase == AppState.Phase.ON;
         if (on) {
             status.setText(R.string.status_on_short);
-            statusDetail.setText(getString(R.string.status_detail_on, AppState.strategy, getString(
+            statusDetail.setText(getString(BypassSettings.rootMode(this) ? R.string.status_detail_on_root
+                    : R.string.status_detail_on, AppState.strategy, getString(
                     NetKind.CELL.equals(NetKind.current(this)) ? R.string.net_cell : R.string.net_wifi)));
             toggle.setText(R.string.turn_off);
         } else if (phase == AppState.Phase.STARTING) {
@@ -717,6 +774,11 @@ public class MainActivity extends Activity implements AppState.Listener {
     }
 
     private void start() {
+        if (BypassSettings.rootMode(this)) {
+            // режиму root разрешение на VPN не нужно
+            startVpn();
+            return;
+        }
         Intent consent = VpnService.prepare(this);
         if (consent != null) {
             startActivityForResult(consent, REQUEST_VPN);

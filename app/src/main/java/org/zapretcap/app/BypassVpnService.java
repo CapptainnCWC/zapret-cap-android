@@ -115,6 +115,10 @@ public class BypassVpnService extends VpnService {
     private DnsForwarder dns;
     private int dnsPort;
     private int quickRestarts;
+    /** Работает режим root: nfqws2 запущен от имени root, VPN не используется. */
+    private boolean rootRunning;
+    /** Обход в режиме root был включён: после перезапуска приложения его нужно подхватить. */
+    static final String KEY_ROOT_ON = "root_on";
     private long lastEngineStart;
 
     static SharedPreferences prefs(Context context) {
@@ -160,6 +164,20 @@ public class BypassVpnService extends VpnService {
      */
     private void onNetworkSettled() {
         Network next = NetKind.physical(this);
+        if (rootRunning) {
+            // nfqws2 от сети не зависит: перезапуск нужен, только если у новой сети другая стратегия
+            if (next == null || next.equals(network)) {
+                return;
+            }
+            network = next;
+            String wanted = Data.strategyFor(this, NetKind.current(this));
+            if (wanted.equals(strategy)) {
+                showNotification(wanted);
+            } else {
+                start(wanted);
+            }
+            return;
+        }
         if (ciadpi == null || next == null || next.equals(network)) {
             return;
         }
@@ -172,6 +190,13 @@ public class BypassVpnService extends VpnService {
     private void checkHealth() {
         // человек мог исправить настройки из уведомления, не открывая приложение
         BackgroundChecks.refreshNotification(this);
+        if (rootRunning) {
+            if (!RootEngine.running(this)) {
+                Log.e(TAG, "nfqws2 is not running, restarting");
+                restartAfterFailure("nfqws2 остановился или его правила сброшены");
+            }
+            return;
+        }
         Process process = ciadpi;
         if (process == null || port == 0) {
             return;
@@ -215,6 +240,15 @@ public class BypassVpnService extends VpnService {
         AppState.set(AppState.Phase.STARTING, name, null);
         try {
             registerNetwork();
+            if (BypassSettings.rootMode(this)) {
+                startRoot(name);
+                return;
+            }
+            if (rootRunning) {
+                // режим сменили на VPN при работающем nfqws2
+                RootEngine.stop(this);
+                rootRunning = false;
+            }
             Data.extract(this);
             Data.applyLists(this);
             ConnectivityManager manager = getSystemService(ConnectivityManager.class);
@@ -252,6 +286,25 @@ public class BypassVpnService extends VpnService {
             Log.e(TAG, "start failed", e);
             stop(e.getMessage());
         }
+    }
+
+    /**
+     * Режим root: VPN не нужен. nfqws2 работает отдельным процессом root и получает пакеты из очереди ядра,
+     * служба только следит за ним и меняет стратегию при смене сети.
+     */
+    private void startRoot(String name) throws IOException {
+        releaseEngines();
+        RootEngine.start(this, name, false);
+        rootRunning = true;
+        prefs(this).edit().putBoolean(KEY_ROOT_ON, true).apply();
+        lastEngineStart = System.currentTimeMillis();
+        network = NetKind.physical(this);
+        strategy = name;
+        BackgroundChecks.refreshNotification(this);
+        showNotification(name);
+        main.removeCallbacks(healthTick);
+        main.postDelayed(healthTick, HEALTH_INTERVAL_MS);
+        AppState.set(AppState.Phase.ON, name, null);
     }
 
     private void startDns(ConnectivityManager manager, Network active) throws IOException {
@@ -311,6 +364,19 @@ public class BypassVpnService extends VpnService {
         main.removeCallbacksAndMessages(null);
         unregisterNetwork();
         releaseEngines();
+        if (rootRunning || BypassSettings.rootMode(this)) {
+            // в отличие от VPN, nfqws2 и его правила сами не исчезнут вместе со службой
+            try {
+                RootEngine.stop(this);
+            } catch (IOException e) {
+                Log.e(TAG, "root stop", e);
+                if (error == null) {
+                    error = e.getMessage();
+                }
+            }
+            rootRunning = false;
+            prefs(this).edit().putBoolean(KEY_ROOT_ON, false).apply();
+        }
         strategy = null;
         network = null;
         AppState.set(AppState.Phase.OFF, null, error);

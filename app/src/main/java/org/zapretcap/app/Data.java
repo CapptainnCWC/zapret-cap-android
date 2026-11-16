@@ -21,13 +21,14 @@ import java.util.List;
 /** Стратегии, списки и фейки: лежат в assets, движкам нужны как обычные файлы. */
 final class Data {
     static final String EXT_VPN = ".vpn";
-    private static final String[] DIRS = {"strategies", "lists", "fake"};
+    private static final String[] DIRS = {"strategies", "lists", "fake", "root/strategies", "root/lua"};
     /** TTL фейков в конфигах. Если подбор нашёл значение лучше, оно хранится отдельно для каждого конфига. */
     static final String FAKE_TTL = "8";
     static final String TTL_KEY_PREFIX = "ttl:";
     /** Порты Firebase Cloud Messaging, через них приходят пуш-уведомления почти всех приложений. */
     static final String PUSH_PORTS = "5228-5230";
     static final String STRATEGY_KEY_PREFIX = "strategy:";
+    static final String ROOT_DEFAULT = "general";
     static final String SCORE_KEY_PREFIX = "score:";
 
     private Data() {
@@ -129,7 +130,8 @@ final class Data {
                 return own;
             }
         }
-        return recommended(kind);
+        // в режиме root свои стратегии: те же, что в Linux-версии, и первая из них - основная
+        return BypassSettings.rootMode(context) ? ROOT_DEFAULT : recommended(kind);
     }
 
     /**
@@ -162,6 +164,9 @@ final class Data {
 
     /** Имена стратегий: general первая, номера по порядку, ALT2 раньше ALT10. */
     static List<String> strategies(Context context) throws IOException {
+        if (BypassSettings.rootMode(context)) {
+            return RootEngine.strategies(context);
+        }
         List<String> names = new ArrayList<>();
         for (String file : context.getAssets().list("strategies")) {
             if (file.endsWith(EXT_VPN)) {

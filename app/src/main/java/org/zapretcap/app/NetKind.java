@@ -200,6 +200,12 @@ final class NetKind {
             }
         }
         scopes.add(kind);
+        if (BypassSettings.rootMode(context)) {
+            // у режима root свои стратегии и свои итоги подбора: записи не должны смешиваться с режимом VPN
+            for (int i = 0; i < scopes.size(); i++) {
+                scopes.set(i, "root/" + scopes.get(i));
+            }
+        }
         return scopes;
     }
 

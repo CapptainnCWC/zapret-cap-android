@@ -224,6 +224,34 @@
         </LinearLayout>
     </LinearLayout>
 
+    <!-- ветка root: выбор между VPN и настоящим nfqws2 -->
+    <TextView
+        style="@style/SectionTitle"
+        android:layout_marginTop="20dp"
+        android:layout_marginBottom="8dp"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:text="@string/mode_title" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_segments"
+        android:orientation="horizontal"
+        android:padding="3dp">
+
+        <TextView android:id="@+id/mode_vpn" style="@style/Segment" android:text="@string/mode_vpn" />
+        <TextView android:id="@+id/mode_root" style="@style/Segment" android:text="@string/mode_root" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/mode_hint"
+        style="@style/Muted"
+        android:layout_marginTop="8dp"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:textSize="12sp" />
+
     <TextView
         style="@style/SectionTitle"
         android:layout_marginTop="20dp"

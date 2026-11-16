@@ -50,6 +50,7 @@ final class BypassSettings {
     private static final String KEY_IPSET = "ipset_mode";
     private static final String KEY_DISCORD_FAKE = "discord_fake";
     private static final String KEY_HOSTS = "hosts_enabled";
+    private static final String KEY_ROOT_MODE = "root_mode";
     private static final String KEY_FAKE_TTL = "fake_ttl:";
     /** Значения, которые можно выбрать. Дальше 12 прыжков оборудование провайдера не стоит. */
     static final int[] FAKE_TTL_CHOICES = {3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
@@ -83,6 +84,15 @@ final class BypassSettings {
     static void setDiscordFake(Context context, String name) {
         prefs(context).edit().putString(KEY_DISCORD_FAKE, name).apply();
         changed = true;
+    }
+
+    /** Режим root: вместо VPN работает nfqws2 с правилами iptables и стратегиями Linux-версии. */
+    static boolean rootMode(Context context) {
+        return prefs(context).getBoolean(KEY_ROOT_MODE, false);
+    }
+
+    static void setRootMode(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean(KEY_ROOT_MODE, enabled).apply();
     }
 
     static boolean hostsEnabled(Context context) {

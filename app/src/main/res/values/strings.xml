@@ -174,4 +174,13 @@
     <string name="bg_confirm">Уже настроил</string>
     <string name="bg_miui_activity_title">Контроль активности MIUI</string>
     <string name="bg_miui_activity_text">В разделе батареи Zapret Cap выберите «Контроль активности: Нет ограничений», иначе MIUI может остановить приложение в фоне. Если уже выбрано, нажмите «Уже настроил».</string>
+    <string name="mode_title">Режим работы</string>
+    <string name="mode_vpn">VPN, без root</string>
+    <string name="mode_root">Root, nfqws2</string>
+    <string name="mode_hint_vpn">Обход через VPN и движок ByeDPI. Работает на любом телефоне, но обманки держатся только на малом TTL.</string>
+    <string name="mode_hint_root">Настоящий nfqws2 из zapret2 и те же стратегии, что в версиях для Linux и Windows. VPN не занят, обход не засыпает вместе с приложением. DNS в этом режиме системный: включите «Частный DNS» в настройках Android, если провайдер подменяет ответы.</string>
+    <string name="mode_need_off">Сначала выключите обход</string>
+    <string name="mode_root_checking">Проверяем права root…</string>
+    <string name="mode_root_denied">Нет прав root: разрешите их приложению в Magisk или KernelSU</string>
+    <string name="status_detail_on_root">%1$s · %2$s · root</string>
 </resources>

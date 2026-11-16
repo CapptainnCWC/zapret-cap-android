@@ -101,6 +101,8 @@ final class ConfigTester {
     private final String kind;
     /** Какая именно сеть: итоги и TTL запоминаются для неё, а для Wi-Fi ещё и как общие для новых сетей. */
     private final List<String> scopes;
+    /** Режим root: стратегии nfqws2 проверяются по одной, движок общий для всего телефона. */
+    private final boolean root;
     private final List<String> targets = new ArrayList<>(Arrays.asList(TARGETS));
     private final List<Result> results = new ArrayList<>();
     private final Map<String, InetAddress> addresses = new LinkedHashMap<>();
@@ -117,6 +119,7 @@ final class ConfigTester {
         this.context = context.getApplicationContext();
         kind = NetKind.current(context);
         scopes = NetKind.scopes(context, kind);
+        root = BypassSettings.rootMode(context);
     }
 
     /** Запускает проверку, а если она уже идёт, возвращает её. */
@@ -196,8 +199,60 @@ final class ConfigTester {
             cancelled = true;
         } finally {
             dns.stop();
+            if (root) {
+                restoreRoot();
+            }
             finished = true;
         }
+    }
+
+    /**
+     * В режиме root подбор сам запускал и останавливал общий движок. Если обход был включён, служба запускает
+     * его заново с выбранной стратегией, иначе движок останавливается.
+     */
+    private void restoreRoot() {
+        try {
+            if (AppState.phase != AppState.Phase.OFF) {
+                android.content.Intent start = new android.content.Intent(context, BypassVpnService.class)
+                        .setAction(BypassVpnService.ACTION_START);
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    context.startForegroundService(start);
+                } else {
+                    context.startService(start);
+                }
+            } else {
+                RootEngine.stop(context);
+            }
+        } catch (IOException | RuntimeException e) {
+            if (error == null) {
+                error = String.valueOf(e.getMessage());
+            }
+        }
+    }
+
+    /** Проверка одной стратегии nfqws2: сайты с обычным IPSet, затем фризы с IPSet на любой адрес. */
+    private Result withRoot(String name) throws IOException, InterruptedException {
+        String base = progress;
+        try {
+            RootEngine.start(context, name, false);
+        } catch (IOException e) {
+            // стратегия, которую движок не принял, ничего не откроет
+            return new Result(name, 0, 0, Long.MAX_VALUE, new FreezeTest.Score(0, 0, 0));
+        }
+        Result sites = measure(name, 0, 0);
+        if (cancelled) {
+            return sites;
+        }
+        progress = base + "\n" + context.getString(R.string.test_progress_freeze);
+        FreezeTest.Score freeze;
+        try {
+            RootEngine.start(context, name, true);
+            freeze = freezeTest.run(0);
+        } catch (IOException e) {
+            freeze = new FreezeTest.Score(0, 0, 0);
+        }
+        progress = base;
+        return sites.withFreeze(freeze);
     }
 
     private void test() throws IOException, InterruptedException {
@@ -210,6 +265,10 @@ final class ConfigTester {
         // в мобильной сети облегчённая проверка: полная отправляет по 7 МБ на каждый конфиг
         freezeTest = new FreezeTest(context, this::resolve, NetKind.CELL.equals(kind));
 
+        if (root) {
+            // «без обхода» должно быть без обхода: в режиме root движок действует на все соединения телефона
+            RootEngine.stop(context);
+        }
         progress = context.getString(R.string.test_progress_direct);
         Result direct = measure("", 0, 0);
         progress = context.getString(R.string.test_progress_direct) + "\n" + context.getString(R.string.test_progress_freeze);
@@ -227,13 +286,18 @@ final class ConfigTester {
             String bestText = best == null ? "" : context.getString(R.string.test_progress_best, best.name, best.ok,
                     targets.size(), best.freeze == null ? 0 : best.freeze.frozen, freezeTotal());
             progress = context.getString(R.string.test_progress, i + 1, names.size(), name) + bestText;
-            List<String> args = args(name, 0);
-            String key = String.join(" ", args);
-            Result known = byArgs.get(key);
-            Result result = known != null
-                    ? new Result(name, known.ttl, known.ok, known.millis, known.freeze)
-                    : withEngine(name, args, freezeArgs(name, 0), 0);
-            byArgs.put(key, result);
+            Result result;
+            if (root) {
+                result = withRoot(name);
+            } else {
+                List<String> args = args(name, 0);
+                String key = String.join(" ", args);
+                Result known = byArgs.get(key);
+                result = known != null
+                        ? new Result(name, known.ttl, known.ok, known.millis, known.freeze)
+                        : withEngine(name, args, freezeArgs(name, 0), 0);
+                byArgs.put(key, result);
+            }
             results.add(result);
             if (best == null || better(result, best)) {
                 best = result;
@@ -242,7 +306,8 @@ final class ConfigTester {
         sort();
         // прежние значения убираем только сейчас: отменённая проверка не должна их терять.
         // TTL, выбранный человеком, подбор не меняет
-        if (BypassSettings.fakeTtl(context, kind) == 0) {
+        // у стратегий nfqws2 обманки не зависят от TTL: подбирать его незачем
+        if (!root && BypassSettings.fakeTtl(context, kind) == 0) {
             clearSavedTtl();
             tryOtherTtl();
         }
@@ -287,7 +352,8 @@ final class ConfigTester {
                     return;
                 }
                 progress = context.getString(R.string.test_progress_recheck, base.name, i + 1, count);
-                Result again = withEngine(base.name, args(base.name, base.ttl), freezeArgs(base.name, base.ttl), base.ttl);
+                Result again = root ? withRoot(base.name)
+                        : withEngine(base.name, args(base.name, base.ttl), freezeArgs(base.name, base.ttl), base.ttl);
                 worst = Math.min(worst, again.ok);
                 slowest = Math.max(slowest, again.millis);
                 if (frozenMost == null || (again.freeze != null && again.freeze.frozenPermille() > frozenMost.frozenPermille())) {
