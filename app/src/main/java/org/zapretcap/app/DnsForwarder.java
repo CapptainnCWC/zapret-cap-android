@@ -73,13 +73,25 @@ final class DnsForwarder {
     /** Кто ответил адресами последним. С него начинаем: в белом списке иначе каждый запрос ждал бы недоступный DoH. */
     private volatile Upstream preferred;
     private volatile boolean running;
-    private DatagramSocket socket;
+    private final List<DatagramSocket> sockets = new java.util.concurrent.CopyOnWriteArrayList<>();
+    /** Серверы всегда опрашиваются в заданном порядке, без перехода на того, кто ответил последним. */
+    private final boolean keepOrder;
 
     DnsForwarder() {
-        for (String url : DOH_URLS) {
+        this(DOH_URLS, UDP_SERVERS, false);
+    }
+
+    /**
+     * @param doh       адреса DoH в порядке опроса
+     * @param udp       обычные DNS-серверы, их опрашивают после DoH
+     * @param keepOrder каждый запрос начинать с первого сервера: так основной сервер остаётся основным
+     */
+    DnsForwarder(String[] doh, String[] udp, boolean keepOrder) {
+        this.keepOrder = keepOrder;
+        for (String url : doh) {
             fixedUpstreams.add((query, timeout) -> askDoh(url, query, timeout));
         }
-        for (String server : UDP_SERVERS) {
+        for (String server : udp) {
             fixedUpstreams.add((query, timeout) -> askUdp(InetAddress.getByName(server), query, timeout));
         }
     }
@@ -96,9 +108,15 @@ final class DnsForwarder {
 
     /** Запускает на свободном порту 127.0.0.1 и возвращает порт. */
     int start() throws IOException {
-        socket = new DatagramSocket(new InetSocketAddress(InetAddress.getByAddress(new byte[]{127, 0, 0, 1}), 0));
+        return listen(InetAddress.getByAddress(new byte[]{127, 0, 0, 1}), 0);
+    }
+
+    /** Слушает ещё один адрес. Можно вызвать несколько раз: например, 127.0.0.1 и ::1 на одном порту. */
+    int listen(InetAddress address, int port) throws IOException {
+        DatagramSocket socket = new DatagramSocket(new InetSocketAddress(address, port));
+        sockets.add(socket);
         running = true;
-        Thread thread = new Thread(this::serve, "dns-forwarder");
+        Thread thread = new Thread(() -> serve(socket), "dns-forwarder");
         thread.setDaemon(true);
         thread.start();
         return socket.getLocalPort();
@@ -106,7 +124,7 @@ final class DnsForwarder {
 
     void stop() {
         running = false;
-        if (socket != null) {
+        for (DatagramSocket socket : sockets) {
             socket.close();
         }
         pool.shutdownNow();
@@ -152,7 +170,7 @@ final class DnsForwarder {
         return reply == null ? null : firstIpv4(reply);
     }
 
-    private void serve() {
+    private void serve(DatagramSocket socket) {
         byte[] buffer = new byte[MAX_PACKET];
         while (running) {
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
@@ -161,7 +179,7 @@ final class DnsForwarder {
                 byte[] query = Arrays.copyOf(packet.getData(), packet.getLength());
                 InetAddress clientAddress = packet.getAddress();
                 int clientPort = packet.getPort();
-                pool.execute(() -> answer(query, clientAddress, clientPort));
+                pool.execute(() -> answer(socket, query, clientAddress, clientPort));
             } catch (RejectedExecutionException | SocketException stopped) {
                 return;
             } catch (IOException e) {
@@ -170,7 +188,7 @@ final class DnsForwarder {
         }
     }
 
-    private void answer(byte[] query, InetAddress clientAddress, int clientPort) {
+    private void answer(DatagramSocket socket, byte[] query, InetAddress clientAddress, int clientPort) {
         if (query.length < 12) {
             return;
         }
@@ -208,7 +226,7 @@ final class DnsForwarder {
     private byte[] resolve(byte[] query) {
         List<Upstream> upstreams = new ArrayList<>(fixedUpstreams);
         upstreams.addAll(networkUpstreams);
-        Upstream first = preferred;
+        Upstream first = keepOrder ? null : preferred;
         if (first != null && upstreams.remove(first)) {
             upstreams.add(0, first);
         }

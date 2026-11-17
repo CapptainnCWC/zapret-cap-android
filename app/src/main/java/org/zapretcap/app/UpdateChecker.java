@@ -14,9 +14,15 @@ import java.io.IOException;
  * Проверка новой версии по последнему релизу на GitHub. Скачивает и ставит её UpdateInstaller.
  */
 final class UpdateChecker {
-    static final String RELEASES_URL = "https://github.com/CapptainnCWC/zapret-cap-android/releases/latest";
+    static final String RELEASES_URL = "https://github.com/CapptainnCWC/zapret-cap-android/releases";
+    /**
+     * Версия с режимом root выходит отдельными предварительными релизами с тегом vX.Y.Z-root. Обычная версия
+     * смотрит только последний обычный релиз и их не видит, а эта сборка ищет в списке только свои.
+     */
     private static final String API_URL =
-            "https://api.github.com/repos/CapptainnCWC/zapret-cap-android/releases/latest";
+            "https://api.github.com/repos/CapptainnCWC/zapret-cap-android/releases?per_page=40";
+    static final String CHANNEL_SUFFIX = "-root";
+    private static final String APK_NAME = "zapret-cap-root.apk";
     private static final String KEY_LATEST = "update_latest";
     private static final String KEY_CHECKED = "update_checked_at";
     private static final long DAY_MS = 24L * 60 * 60 * 1000;
@@ -51,14 +57,27 @@ final class UpdateChecker {
     /** Сетевой запрос: вызывать не из главного потока. */
     static Release fetch(Context context) throws IOException {
         try {
-            JSONObject json = new JSONObject(BypassSettings.download(API_URL));
+            JSONArray releases = new JSONArray(BypassSettings.download(API_URL));
+            JSONObject json = null;
+            for (int i = 0; i < releases.length(); i++) {
+                JSONObject candidate = releases.getJSONObject(i);
+                String tag = candidate.optString("tag_name");
+                if (!candidate.optBoolean("draft") && tag.endsWith(CHANNEL_SUFFIX)
+                        && (json == null || isNewer(tag.replaceFirst("^[vV]", ""),
+                        json.getString("tag_name").replaceFirst("^[vV]", "")))) {
+                    json = candidate;
+                }
+            }
+            if (json == null) {
+                throw new IOException("на GitHub нет релизов версии с root");
+            }
             String version = json.getString("tag_name").replaceFirst("^[vV]", "");
             String page = json.optString("html_url", RELEASES_URL);
             JSONArray assets = json.optJSONArray("assets");
             String apk = null;
             for (int i = 0; assets != null && i < assets.length(); i++) {
                 JSONObject asset = assets.getJSONObject(i);
-                if (asset.optString("name").endsWith(".apk")) {
+                if (asset.optString("name").equals(APK_NAME)) {
                     apk = asset.getString("browser_download_url");
                     break;
                 }

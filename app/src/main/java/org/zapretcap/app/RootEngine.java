@@ -28,6 +28,7 @@ final class RootEngine {
     private static final String FWMARK = "0x40000000";
     private static final String CHAIN_POST = "zapret_cap_post";
     private static final String CHAIN_PRE = "zapret_cap_pre";
+    private static final String CHAIN_DNS = "zapret_cap_dns";
     /** Сколько первых пакетов соединения отдавать движку: стратегии работают с началом соединения. */
     private static final int PKT_OUT_TCP = 20;
     private static final int PKT_IN_TCP = 10;
@@ -113,6 +114,7 @@ final class RootEngine {
         script.append("P=$(cat ").append(pid).append(" 2>/dev/null)\n");
         script.append("if [ -z \"$P\" ] || [ ! -d /proc/$P ]; then echo 'ZC: nfqws2 завершился сразу после запуска'; tail -n 5 ")
                 .append(log).append("; zc_down; exit 24; fi\n");
+        script.append(dnsScript(context, run));
         script.append("chmod 644 ").append(pid).append(' ').append(log).append(" 2>/dev/null\nexit 0\n");
         RootShell.Result result = RootShell.exec(context, script.toString(), TIMEOUT_MS);
         if (!result.ok()) {
@@ -130,9 +132,14 @@ final class RootEngine {
     /** Работает ли движок и на месте ли его правила: их мог сбросить системный сервис сети. */
     static boolean running(Context context) {
         String pid = quote(runDir(context).getPath() + "/nfqws2.pid");
+        String dns = quote(runDir(context).getPath() + "/dns.pid");
         String script = "P=$(cat " + pid + " 2>/dev/null)\n"
                 + "[ -n \"$P\" ] && [ -d /proc/$P ] && grep -q nfqws2 /proc/$P/cmdline 2>/dev/null"
-                + " && iptables -w 5 -t mangle -S " + CHAIN_POST + " >/dev/null 2>&1\n";
+                + " && iptables -w 5 -t mangle -S " + CHAIN_POST + " >/dev/null 2>&1 || exit 1\n"
+                // DNS без своей программы оставил бы телефон без имён сайтов: перенаправление есть, только пока она жива
+                + "if iptables -w 5 -t nat -S " + CHAIN_DNS + " >/dev/null 2>&1; then\n"
+                + " D=$(cat " + dns + " 2>/dev/null); [ -n \"$D\" ] && [ -d /proc/$D ] || exit 2\n"
+                + "fi\n";
         try {
             return RootShell.exec(context, script, TIMEOUT_MS).ok();
         } catch (IOException e) {
@@ -164,6 +171,15 @@ final class RootEngine {
                 // движок от прошлой установки приложения: файла с его номером уже нет
                 + "pkill -x libnfqws2.so 2>/dev/null\n"
                 + "rm -f " + pid + "\n"
+                // сначала правило, потом программа DNS: иначе на миг запросы уходили бы в пустой порт
+                + "for t in iptables ip6tables; do\n"
+                + " while $t -w 5 -t nat -D OUTPUT -j " + CHAIN_DNS + " 2>/dev/null; do :; done\n"
+                + " $t -w 5 -t nat -F " + CHAIN_DNS + " 2>/dev/null; $t -w 5 -t nat -X " + CHAIN_DNS + " 2>/dev/null\n"
+                + "done\n"
+                + "D=$(cat " + quote(run + "/dns.pid") + " 2>/dev/null)\n"
+                + "[ -n \"$D\" ] && [ -d /proc/$D ] && kill $D 2>/dev/null\n"
+                + "pkill -f org.zapretcap.app.DnsMain 2>/dev/null\n"
+                + "rm -f " + quote(run + "/dns.pid") + "\n"
                 + "for t in iptables ip6tables; do\n"
                 + " while $t -w 5 -t mangle -D POSTROUTING -j " + CHAIN_POST + " 2>/dev/null; do :; done\n"
                 + " while $t -w 5 -t mangle -D PREROUTING -j " + CHAIN_PRE + " 2>/dev/null; do :; done\n"
@@ -177,6 +193,39 @@ final class RootEngine {
                 + "return 0\n"
                 + "}\n"
                 + "zc_down\n";
+    }
+
+    /**
+     * DNS: Cloudflare, затем Google, затем Яндекс (DnsMain). Программа запускается от root через app_process,
+     * а правило nat направляет к ней обычные DNS-запросы приложений. Её собственные запросы идут от root и не
+     * перенаправляются. Если программа не поднялась, DNS остаётся системным, обход всё равно работает.
+     */
+    // метка готовности латиницей: grep из toybox не находит русский текст в шаблоне
+    private static String dnsScript(Context context, String run) {
+        String apk = quote(context.getApplicationInfo().sourceDir);
+        String pid = quote(run + "/dns.pid");
+        String log = quote(run + "/dns.log");
+        String port = Integer.toString(DnsMain.PORT);
+        return "( CLASSPATH=" + apk + " setsid /system/bin/app_process /system/bin org.zapretcap.app.DnsMain " + port
+                + " >" + log + " 2>&1 </dev/null & echo $! > " + pid + " )\n"
+                + "i=0; while ! grep -q 'DNS ready' " + log + " 2>/dev/null && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done\n"
+                + "if grep -q 'DNS ready' " + log + " 2>/dev/null; then\n"
+                // запросы шлёт системный netd от имени root, поэтому свои запросы программы отличаются по адресу:
+                // она ходит только на серверы из DnsMain, остальной DNS телефона идёт к ней
+                + " iptables -w 5 -t nat -N " + CHAIN_DNS + " 2>/dev/null\n"
+                + " iptables -w 5 -t nat -A " + CHAIN_DNS + " -d " + DnsMain.UPSTREAM_V4 + " -j RETURN\n"
+                + " iptables -w 5 -t nat -A " + CHAIN_DNS + " -p udp --dport 53 -j REDIRECT --to-ports " + port + "\n"
+                + " iptables -w 5 -t nat -I OUTPUT 1 -j " + CHAIN_DNS + "\n"
+                // IPv6: только если программа слушает ::1 и в ядре есть nat для IPv6
+                + " if grep -q 'DNS ready v6' " + log + " && ip6tables -w 5 -t nat -N " + CHAIN_DNS + " 2>/dev/null; then\n"
+                + "  ip6tables -w 5 -t nat -A " + CHAIN_DNS + " -p udp --dport 53 -j REDIRECT --to-ports " + port + "\n"
+                + "  ip6tables -w 5 -t nat -I OUTPUT 1 -j " + CHAIN_DNS + "\n"
+                + " fi\n"
+                + "else\n"
+                + " echo 'ZC: DNS не запустился, остаётся системный'; tail -n 3 " + log + "\n"
+                + " D=$(cat " + pid + " 2>/dev/null); [ -n \"$D\" ] && kill $D 2>/dev/null; rm -f " + pid + "\n"
+                + "fi\n"
+                + "chmod 644 " + log + " 2>/dev/null\n";
     }
 
     /**
