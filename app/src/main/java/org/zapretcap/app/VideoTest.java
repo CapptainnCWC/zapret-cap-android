@@ -203,7 +203,10 @@ final class VideoTest {
                 .addOption("-J")
                 .addOption("--ignore-config")
                 .addOption("--no-playlist")
-                .addOption("--socket-timeout", Integer.toString(STALL_S));
+                .addOption("--socket-timeout", Integer.toString(STALL_S))
+                // разбор пробуется при каждой стратегии, пока YouTube не ответит: без повторов каждая попытка
+                // занимает секунды, а не 16 с
+                .addOption("--extractor-retries", "0");
         proxy(request, socksPort);
         String id = "ytdl-info-" + IDS.incrementAndGet();
         ScheduledFuture<?> watchdog = WATCHDOG.schedule(() -> YoutubeDL.getInstance().destroyProcessById(id),
@@ -317,7 +320,8 @@ final class VideoTest {
 
     private static void proxy(YoutubeDLRequest request, int socksPort) {
         if (socksPort > 0) {
-            request.addOption("--proxy", "socks5://127.0.0.1:" + socksPort);
+            // socks5h: имя сайта уходит движку, а он берёт адрес у DNS приложения, а не у подменённого DNS сети
+            request.addOption("--proxy", "socks5h://127.0.0.1:" + socksPort);
         }
     }
 

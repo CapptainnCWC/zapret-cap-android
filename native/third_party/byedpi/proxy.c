@@ -118,6 +118,98 @@ static inline int nb_socket(int domain, int type)
 }
 
 
+/*
+ * Zapret Cap: имя из запроса SOCKS5 сначала спрашиваем у DNS приложения (--dns-port, 127.0.0.1), а не у системы.
+ * Системный DNS сети провайдер подменяет, а приложение исключено из своего VPN. Имена по SOCKS присылает только
+ * yt-dlp в подборе: остальные приложения идут через туннель с готовыми адресами. Только A-запись.
+ */
+static int resolve_app_dns(const char *host, union sockaddr_u *addr)
+{
+    unsigned char q[300], r[1500];
+    int n = 0, fd, an, off, i;
+    ssize_t m;
+    const char *p = host;
+    struct sockaddr_in server = {0};
+    struct timeval tv = { 3, 0 };
+    uint16_t id = (uint16_t)rand();
+
+    if (!params.dns_port) {
+        return -1;
+    }
+    q[n++] = id >> 8; q[n++] = id & 0xff;
+    q[n++] = 1; q[n++] = 0;
+    q[n++] = 0; q[n++] = 1;
+    memset(q + n, 0, 6); n += 6;
+    while (*p) {
+        const char *dot = strchr(p, '.');
+        size_t l = dot ? (size_t)(dot - p) : strlen(p);
+        if (l == 0 || l > 63 || n + l + 6 > sizeof(q)) {
+            return -1;
+        }
+        q[n++] = (unsigned char)l;
+        memcpy(q + n, p, l);
+        n += l;
+        p += l;
+        if (*p == '.') {
+            p++;
+        }
+    }
+    q[n++] = 0;
+    q[n++] = 0; q[n++] = 1;
+    q[n++] = 0; q[n++] = 1;
+
+    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv));
+    server.sin_family = AF_INET;
+    server.sin_port = htons(params.dns_port);
+    server.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if (sendto(fd, (char *)q, n, 0, (struct sockaddr *)&server, sizeof(server)) != n) {
+        close(fd);
+        return -1;
+    }
+    m = recv(fd, (char *)r, sizeof(r), 0);
+    close(fd);
+    if (m < n || r[0] != q[0] || r[1] != q[1] || (r[3] & 0x0f)) {
+        return -1;
+    }
+    an = r[6] << 8 | r[7];
+    off = n;
+    for (i = 0; i < an; i++) {
+        while (off < m) {
+            if ((r[off] & 0xC0) == 0xC0) {
+                off += 2;
+                break;
+            }
+            if (r[off] == 0) {
+                off++;
+                break;
+            }
+            off += r[off] + 1;
+        }
+        if (off + 10 > m) {
+            return -1;
+        }
+        int type = r[off] << 8 | r[off + 1];
+        int rdlen = r[off + 8] << 8 | r[off + 9];
+        off += 10;
+        if (off + rdlen > m) {
+            return -1;
+        }
+        if (type == 1 && rdlen == 4) {
+            memset(addr, 0, sizeof(*addr));
+            addr->in.sin_family = AF_INET;
+            memcpy(&addr->in.sin_addr, r + off, 4);
+            return 0;
+        }
+        off += rdlen;
+    }
+    return -1;
+}
+
+
 static int resolve(const char *chost, int len, 
         union sockaddr_u *addr, int type) 
 {
@@ -135,6 +227,9 @@ static int resolve(const char *chost, int len,
     
     LOG(LOG_S, "resolve: %s\n", host);
     
+    if (params.resolve && !resolve_app_dns(host, addr)) {
+        return 0;
+    }
     if (getaddrinfo(host, 0, &hints, &res) || !res) {
         return -1;
     }

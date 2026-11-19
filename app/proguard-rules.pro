@@ -3,5 +3,11 @@
 
 # youtubedl-android: классы вызываются из Kotlin и читают ответы через jackson
 -keep class com.yausername.** { *; }
+# распаковка Python: commons-compress создаёт обработчики полей ZIP по списку классов через рефлексию,
+# после переименования R8 он падал на «class ... is not a concrete class»
+-keep class org.apache.commons.compress.** { *; }
+-keep class org.apache.commons.io.** { *; }
+-keep class com.fasterxml.jackson.** { *; }
+-dontwarn org.apache.commons.compress.**
 -dontwarn com.fasterxml.jackson.**
 -dontwarn java.beans.**
