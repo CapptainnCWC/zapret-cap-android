@@ -183,4 +183,11 @@
     <string name="mode_root_checking">Проверяем права root…</string>
     <string name="mode_root_denied">Нет прав root: разрешите их приложению в Magisk или KernelSU</string>
     <string name="status_detail_on_root">%1$s · %2$s · root</string>
+    <string name="test_progress_video_prepare">Готовим тест видео: yt-dlp и разбор ролика…</string>
+    <string name="test_progress_video">Качаем ролик через yt-dlp…</string>
+    <string name="video_ok">видео %1$s</string>
+    <string name="video_slow">видео медленно, %1$s</string>
+    <string name="video_stall">видео зависло на %1$s</string>
+    <string name="video_fail">видео не скачалось</string>
+    <string name="video_baseline">\nБез обхода: %1$s.</string>
 </resources>

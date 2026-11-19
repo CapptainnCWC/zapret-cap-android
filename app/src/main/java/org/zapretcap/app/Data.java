@@ -228,6 +228,11 @@ final class Data {
         return SCORE_KEY_PREFIX + kind + ":" + strategy;
     }
 
+    /** Итог теста видео: VideoTest.Score.encode(). */
+    static String videoKey(String kind, String strategy) {
+        return "video:" + kind + ":" + strategy;
+    }
+
     /** Итог проверки фризов: "застыло/всего". */
     static String freezeKey(String kind, String strategy) {
         return "freeze:" + kind + ":" + strategy;

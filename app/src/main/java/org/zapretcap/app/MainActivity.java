@@ -620,9 +620,10 @@ public class MainActivity extends Activity implements AppState.Listener {
         for (ConfigTester.Result result : results) {
             int frozen = result.freeze == null ? 0 : result.freeze.frozen;
             int checked = result.freeze == null ? 0 : result.freeze.total();
-            rows.add(result.ttl > 0
+            String row = result.ttl > 0
                     ? getString(R.string.test_row_ttl, result.ok, total, result.name, frozen, checked, result.ttl)
-                    : getString(R.string.test_row, result.ok, total, result.name, frozen, checked));
+                    : getString(R.string.test_row, result.ok, total, result.name, frozen, checked);
+            rows.add(result.video == null ? row : row + " · " + result.video.text(this));
         }
         TextView header = new TextView(this);
         int padding = (int) (20 * getResources().getDisplayMetrics().density);
@@ -633,6 +634,9 @@ public class MainActivity extends Activity implements AppState.Listener {
                 ? getString(R.string.test_chosen, best.name, best.ok, total, bestFrozen, freezeTotal, direct,
                         directFrozen, test.freezeTargets())
                 : getString(R.string.test_none, direct, total, directFrozen, freezeTotal));
+        if (baseline.video != null) {
+            header.append(getString(R.string.video_baseline, baseline.video.text(this)));
+        }
         ListView rowsView = new ListView(this);
         rowsView.addHeaderView(header, null, false);
         rowsView.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, rows));
@@ -842,7 +846,15 @@ public class MainActivity extends Activity implements AppState.Listener {
             if (score != null) {
                 String freeze = Data.scoped(prefs, editingScopes, scope -> Data.freezeKey(scope, name));
                 String text = getString(recommended ? R.string.config_score_recommended : R.string.config_score, score);
-                detail.setText(freeze == null ? text : text + getString(R.string.config_freeze, freeze));
+                if (freeze != null) {
+                    text += getString(R.string.config_freeze, freeze);
+                }
+                VideoTest.Score video = VideoTest.Score.decode(
+                        Data.scoped(prefs, editingScopes, scope -> Data.videoKey(scope, name)));
+                if (video != null) {
+                    text += " · " + video.text(MainActivity.this);
+                }
+                detail.setText(text);
             } else if (recommended) {
                 detail.setText(R.string.config_recommended);
             }

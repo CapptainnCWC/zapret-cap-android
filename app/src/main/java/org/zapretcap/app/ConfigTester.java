@@ -73,21 +73,36 @@ final class ConfigTester {
         final long millis;
         /** Замирание на 16-20 КБ. Null, пока не проверено. */
         final FreezeTest.Score freeze;
+        /** Загрузка видео через yt-dlp. Null, если не проверялась. */
+        final VideoTest.Score video;
 
         Result(String name, int ttl, int ok, long millis) {
-            this(name, ttl, ok, millis, null);
+            this(name, ttl, ok, millis, null, null);
         }
 
         Result(String name, int ttl, int ok, long millis, FreezeTest.Score freeze) {
+            this(name, ttl, ok, millis, freeze, null);
+        }
+
+        Result(String name, int ttl, int ok, long millis, FreezeTest.Score freeze, VideoTest.Score video) {
             this.name = name;
             this.ttl = ttl;
             this.ok = ok;
             this.millis = millis;
             this.freeze = freeze;
+            this.video = video;
         }
 
         Result withFreeze(FreezeTest.Score score) {
-            return new Result(name, ttl, ok, millis, score);
+            return new Result(name, ttl, ok, millis, score, video);
+        }
+
+        Result withVideo(VideoTest.Score score) {
+            return new Result(name, ttl, ok, millis, freeze, score);
+        }
+
+        int videoRank() {
+            return video == null ? VideoTest.UNTESTED_RANK : video.rank();
         }
 
         int frozenPermille() {
@@ -114,6 +129,8 @@ final class ConfigTester {
     private volatile String error;
     private volatile Result baseline;
     private FreezeTest freezeTest;
+    /** Тест загрузки видео. Null, если yt-dlp на этом телефоне нет. */
+    private VideoTest video;
 
     private ConfigTester(Context context) {
         this.context = context.getApplicationContext();
@@ -243,6 +260,9 @@ final class ConfigTester {
         if (cancelled) {
             return sites;
         }
+        // nfqws2 работает для всего телефона: yt-dlp идёт как любое приложение, прокси не нужен.
+        // Видео в обычном режиме IPSet, сразу после сайтов: стратегия работает так же, как у человека
+        sites = withVideo(sites, 0, base);
         progress = base + "\n" + context.getString(R.string.test_progress_freeze);
         FreezeTest.Score freeze;
         try {
@@ -265,12 +285,16 @@ final class ConfigTester {
         // в мобильной сети облегчённая проверка: полная отправляет по 7 МБ на каждый конфиг
         freezeTest = new FreezeTest(context, this::resolve, NetKind.CELL.equals(kind));
 
+        // разбор ролика до того, как подбор выключит обход человека
+        prepareVideo();
+
         if (root) {
             // «без обхода» должно быть без обхода: в режиме root движок действует на все соединения телефона
             RootEngine.stop(context);
         }
         progress = context.getString(R.string.test_progress_direct);
         Result direct = measure("", 0, 0);
+        direct = withVideo(direct, 0, context.getString(R.string.test_progress_direct));
         progress = context.getString(R.string.test_progress_direct) + "\n" + context.getString(R.string.test_progress_freeze);
         baseline = direct.withFreeze(freezeTest.run(0));
 
@@ -294,7 +318,7 @@ final class ConfigTester {
                 String key = String.join(" ", args);
                 Result known = byArgs.get(key);
                 result = known != null
-                        ? new Result(name, known.ttl, known.ok, known.millis, known.freeze)
+                        ? new Result(name, known.ttl, known.ok, known.millis, known.freeze, known.video)
                         : withEngine(name, args, freezeArgs(name, 0), 0);
                 byArgs.put(key, result);
             }
@@ -347,6 +371,7 @@ final class ConfigTester {
             int worst = base.ok;
             long slowest = base.millis;
             FreezeTest.Score frozenMost = base.freeze;
+            VideoTest.Score videoWorst = base.video;
             for (int pass = 0; pass < RECHECK_TIMES; pass++) {
                 if (cancelled) {
                     return;
@@ -359,8 +384,11 @@ final class ConfigTester {
                 if (frozenMost == null || (again.freeze != null && again.freeze.frozenPermille() > frozenMost.frozenPermille())) {
                     frozenMost = again.freeze;
                 }
+                if (videoWorst == null || (again.video != null && again.video.rank() > videoWorst.rank())) {
+                    videoWorst = again.video;
+                }
             }
-            results.set(i, new Result(base.name, base.ttl, worst, slowest, frozenMost));
+            results.set(i, new Result(base.name, base.ttl, worst, slowest, frozenMost, videoWorst));
         }
     }
 
@@ -373,6 +401,11 @@ final class ConfigTester {
                     editor.putString(Data.freezeKey(key, result.name), result.freeze.frozen + "/" + result.freeze.total());
                 } else {
                     editor.remove(Data.freezeKey(key, result.name));
+                }
+                if (result.video != null) {
+                    editor.putString(Data.videoKey(key, result.name), result.video.encode());
+                } else {
+                    editor.remove(Data.videoKey(key, result.name));
                 }
             }
         }
@@ -437,10 +470,40 @@ final class ConfigTester {
         editor.apply();
     }
 
-    /** Как в Linux-версии: главное - открытые сайты, при равенстве меньше фризов, затем быстрее. */
+    /** Как в Linux-версии: главное - открытые сайты, затем меньше фризов, затем видео, затем быстрее. */
     private static final Comparator<Result> ORDER = Comparator.<Result>comparingInt(r -> -r.ok)
             .thenComparingInt(Result::frozenPermille)
+            .thenComparingInt(Result::videoRank)
             .thenComparingLong(r -> r.millis);
+
+    /**
+     * yt-dlp и разбор ролика до первой стратегии: разбор идёт через обход человека, если он включён. Если YouTube
+     * не ответил, ролик разбирается при первой стратегии, при которой ответит.
+     */
+    private void prepareVideo() {
+        progress = context.getString(R.string.test_progress_video_prepare);
+        VideoTest test = new VideoTest(context);
+        if (!test.init()) {
+            // на этой архитектуре yt-dlp нет: подбор идёт без видео
+            return;
+        }
+        test.updateIfDue();
+        // в режиме root обход человека действует на всё, в режиме VPN приложение ходит через его движок
+        test.prepare(root ? 0 : BypassVpnService.enginePort);
+        video = test;
+    }
+
+    /** Загрузка видео через движок стратегии, 0 - напрямую. */
+    private Result withVideo(Result sites, int socksPort, String base) {
+        if (video == null || cancelled) {
+            return sites;
+        }
+        progress = base + "\n" + context.getString(R.string.test_progress_video);
+        if (!video.prepared() && !video.prepare(socksPort)) {
+            return sites.withVideo(new VideoTest.Score(false, false, 0, 1, 0));
+        }
+        return sites.withVideo(video.download(socksPort));
+    }
 
     private static boolean better(Result a, Result b) {
         return ORDER.compare(a, b) < 0;
@@ -466,6 +529,8 @@ final class ConfigTester {
             if (cancelled) {
                 return sites;
             }
+            // видео в обычном режиме IPSet, сразу после сайтов: стратегия работает так же, как у человека
+            sites = withVideo(sites, engine.port, base);
             progress = base + "\n" + context.getString(R.string.test_progress_freeze);
             if (freezeArgs.equals(args)) {
                 freeze = freezeTest.run(engine.port);
