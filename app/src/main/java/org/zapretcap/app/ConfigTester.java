@@ -122,6 +122,8 @@ final class ConfigTester {
     private final List<Result> results = new ArrayList<>();
     private final Map<String, InetAddress> addresses = new LinkedHashMap<>();
     private final DnsForwarder dns = new DnsForwarder();
+    /** Порт DNS подбора для движков: по нему ciadpi разрешает имена, которые присылает yt-dlp. */
+    private int dnsPort;
     private volatile boolean cancelled;
     private volatile boolean finished;
     private volatile boolean shown;
@@ -285,6 +287,9 @@ final class ConfigTester {
         // в мобильной сети облегчённая проверка: полная отправляет по 7 МБ на каждый конфиг
         freezeTest = new FreezeTest(context, this::resolve, NetKind.CELL.equals(kind));
 
+        // DNS подбора на порту: yt-dlp разрешает имена через движок, а движок у этого DNS. Системный DNS сети
+        // провайдер подменяет, и YouTube не нашёлся бы вовсе
+        dnsPort = dns.start();
         // разбор ролика до того, как подбор выключит обход человека
         prepareVideo();
 
@@ -294,7 +299,7 @@ final class ConfigTester {
         }
         progress = context.getString(R.string.test_progress_direct);
         Result direct = measure("", 0, 0);
-        direct = withVideo(direct, 0, context.getString(R.string.test_progress_direct));
+        direct = withVideoDirect(direct);
         progress = context.getString(R.string.test_progress_direct) + "\n" + context.getString(R.string.test_progress_freeze);
         baseline = direct.withFreeze(freezeTest.run(0));
 
@@ -493,6 +498,25 @@ final class ConfigTester {
         video = test;
     }
 
+    /**
+     * Видео «без обхода»: через движок без приёмов обхода, но с DNS подбора. Так же проверяются сайты: адреса
+     * берутся из честного DNS, а меряется только то, что делает с соединением провайдер.
+     */
+    private Result withVideoDirect(Result direct) throws IOException, InterruptedException {
+        if (video == null) {
+            return direct;
+        }
+        Engine plain = Engine.start(context, java.util.Collections.emptyList(), dnsPort);
+        try {
+            return plain == null ? direct
+                    : withVideo(direct, plain.port, context.getString(R.string.test_progress_direct));
+        } finally {
+            if (plain != null) {
+                plain.stop();
+            }
+        }
+    }
+
     /** Загрузка видео через движок стратегии, 0 - напрямую. */
     private Result withVideo(Result sites, int socksPort, String base) {
         if (video == null || cancelled) {
@@ -519,7 +543,7 @@ final class ConfigTester {
         String base = progress;
         Result sites;
         FreezeTest.Score freeze;
-        Engine engine = Engine.start(context, args);
+        Engine engine = Engine.start(context, args, dnsPort);
         try {
             if (engine == null) {
                 // конфиг, который движок не принял, ничего не откроет
@@ -541,7 +565,7 @@ final class ConfigTester {
                 engine.stop();
             }
         }
-        Engine freezeEngine = Engine.start(context, freezeArgs);
+        Engine freezeEngine = Engine.start(context, freezeArgs, dnsPort);
         try {
             freeze = freezeEngine == null ? new FreezeTest.Score(0, 0, 0) : freezeTest.run(freezeEngine.port);
         } finally {
@@ -563,12 +587,12 @@ final class ConfigTester {
             this.port = port;
         }
 
-        static Engine start(Context context, List<String> args) throws IOException, InterruptedException {
+        static Engine start(Context context, List<String> args, int dnsPort) throws IOException, InterruptedException {
             int port;
             try (ServerSocket socket = new ServerSocket(0)) {
                 port = socket.getLocalPort();
             }
-            Process process = new ProcessBuilder(Data.ciadpiCommand(context, port, 0, args)).redirectErrorStream(true).start();
+            Process process = new ProcessBuilder(Data.ciadpiCommand(context, port, dnsPort, args)).redirectErrorStream(true).start();
             drain(process);
             if (!waitForPort(process, port)) {
                 process.destroy();
