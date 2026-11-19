@@ -20,8 +20,8 @@ android {
         applicationId 'org.zapretcap.app'
         minSdk 24
         targetSdk 35
-        versionCode 17
-        versionName '1.5.2-root'
+        versionCode 18
+        versionName '1.5.3-root'
     }
 
     signingConfigs {
