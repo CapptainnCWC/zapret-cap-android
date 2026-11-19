@@ -174,4 +174,11 @@
     <string name="bg_confirm">Уже настроил</string>
     <string name="bg_miui_activity_title">Контроль активности MIUI</string>
     <string name="bg_miui_activity_text">В разделе батареи Zapret Cap выберите «Контроль активности: Нет ограничений», иначе MIUI может остановить приложение в фоне. Если уже выбрано, нажмите «Уже настроил».</string>
+    <string name="test_progress_video_prepare">Готовим тест видео: yt-dlp и разбор ролика…</string>
+    <string name="test_progress_video">Качаем ролик через yt-dlp…</string>
+    <string name="video_ok">видео %1$s</string>
+    <string name="video_slow">видео медленно, %1$s</string>
+    <string name="video_stall">видео зависло на %1$s</string>
+    <string name="video_fail">видео не скачалось</string>
+    <string name="video_baseline">\nБез обхода: %1$s.</string>
 </resources>

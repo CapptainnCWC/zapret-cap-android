@@ -56,6 +56,13 @@ android {
         jniLibs {
             // движки запускаются как программы: им нужны настоящие файлы, а не страницы внутри APK
             useLegacyPackaging true
+            // Python и QuickJS для теста видео (youtubedl-android) только под arm64: под каждую архитектуру они весят
+            // по 15 МБ, а тест нужен на обычных телефонах. На других архитектурах подбор просто пропускает видео
+            // это не настоящие библиотеки, а архивы с расширением .so: strip их не понимает
+            keepDebugSymbols += ['**/libpython.zip.so', '**/libpython.so', '**/libqjs.so']
+            excludes += ['armeabi-v7a', 'x86', 'x86_64'].collectMany { abi ->
+                ['libpython.so', 'libpython.zip.so', 'libqjs.so'].collect { "lib/$abi/$it".toString() }
+            }
         }
     }
 
@@ -69,6 +76,9 @@ android {
 dependencies {
     // HTTP/2 для медиа Telegram: HPACK, ALPN на старых Android и управление потоком уже отлажены
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    // Тест загрузки видео в подборе: тот же yt-dlp, через который качают музыкальные боты и загрузчики.
+    // Только модуль library: ffmpeg и aria2c тесту не нужны
+    implementation 'io.github.junkfood02.youtubedl-android:library:0.18.1'
 }
 
 tasks.register('buildNative', Exec) {
